@@ -2,11 +2,13 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from configgen import cli
 
 EXAMPLES_ROOT = Path(__file__).resolve().parents[1] / "examples"
 SCHEMAS_DIR = EXAMPLES_ROOT / "schemas"
+TEMPLATES_DIR = EXAMPLES_ROOT / "templates"
 SCHEMA_PATH = SCHEMAS_DIR / "server_provisioning.yaml"
 ROUTER_SCHEMA_PATH = SCHEMAS_DIR / "router_base_config.yaml"
 
@@ -49,6 +51,32 @@ def test_check_valid_router_schema(capsys):
     assert code == 0
     assert "OK" in out
     assert "router_base_config" in out
+
+
+def test_check_examples_have_no_mismatch_warnings(capsys):
+    for schema_path in (SCHEMA_PATH, ROUTER_SCHEMA_PATH):
+        code = cli.main(["check", str(schema_path)])
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "WARNING" not in out
+
+
+def test_check_warns_on_undeclared_template_variable(tmp_path: Path, capsys):
+    (tmp_path / "schemas").mkdir()
+    (tmp_path / "templates").mkdir()
+    schema_path = tmp_path / "schemas" / "widget.yaml"
+    schema_path.write_text(
+        "name: Widget\nid: widget\ntemplate: widget.j2\n"
+        "fields:\n  - key: known\n    label: Known\n    type: string\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "widget.j2").write_text("{{ known }} {{ mystery }}", encoding="utf-8")
+
+    code = cli.main(["check", str(schema_path)])
+    out = capsys.readouterr().out
+    assert code == 0  # advisory, not blocking
+    assert "WARNING" in out
+    assert "mystery" in out
 
 
 def test_check_invalid_schema(tmp_path: Path, capsys):
@@ -206,3 +234,51 @@ def test_version_flag(capsys):
     assert excinfo.value.code == 0
     out = capsys.readouterr().out
     assert "ConfigGen" in out
+
+
+def test_extract_lists_variables(capsys):
+    template_path = TEMPLATES_DIR / "server_provisioning.j2"
+    code = cli.main(["extract", str(template_path)])
+    out = capsys.readouterr().out
+    assert code == 0
+    lines = out.split()
+    assert "hostname" in lines
+    assert "management_ip" in lines
+    assert "subnet" in lines
+
+
+def test_extract_scaffold_produces_yaml(capsys):
+    template_path = TEMPLATES_DIR / "server_provisioning.j2"
+    code = cli.main(["extract", str(template_path), "--scaffold"])
+    out = capsys.readouterr().out
+    assert code == 0
+    scaffold = yaml.safe_load(out)
+    assert scaffold["id"] == "server_provisioning"
+    field_keys = {f["key"] for f in scaffold["fields"]}
+    assert "management_ip" in field_keys
+
+
+def test_extract_check_reports_clean_match(capsys):
+    template_path = TEMPLATES_DIR / "server_provisioning.j2"
+    code = cli.main(["extract", str(template_path), "--check", str(SCHEMA_PATH)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "MISSING" not in out
+    assert "OK" in out
+
+
+def test_extract_check_reports_missing_variable(tmp_path: Path, capsys):
+    schema_path = tmp_path / "widget.yaml"
+    schema_path.write_text(
+        "name: Widget\nid: widget\ntemplate: widget.j2\n"
+        "fields:\n  - key: known\n    label: Known\n    type: string\n",
+        encoding="utf-8",
+    )
+    template_path = tmp_path / "widget.j2"
+    template_path.write_text("{{ known }} {{ mystery }}", encoding="utf-8")
+
+    code = cli.main(["extract", str(template_path), "--check", str(schema_path)])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "mystery: MISSING" in out
+    assert "known: OK" in out

@@ -8,10 +8,18 @@ import json
 import sys
 from pathlib import Path
 
+import yaml
+
 from configgen.appinfo import APP_NAME, __version__
 from configgen.core.exporter import save_documents
+from configgen.core.extractor import (
+    classify_variables,
+    extract_variables_from_file,
+    scaffold_schema,
+)
 from configgen.core.renderer import RenderError, render_documents
 from configgen.core.schema import (
+    Schema,
     find_schema_files,
     load_schema_dict,
     project_dirs_for,
@@ -28,6 +36,22 @@ def _validate_file(schema_path: Path) -> None:
     validate_schema(data, templates_dir=templates_dir, prepare_dir=prepare_dir)
 
 
+def _mismatch_warnings(schema: Schema, templates_dir: Path) -> list[str]:
+    """Template variables with no declared source. Advisory only — see
+    core/extractor.py for why this can never be a hard failure when a
+    prepare hook is involved."""
+    field_keys = set(schema.field_map())
+    warnings: list[str] = []
+    for doc in schema.document_list():
+        variables = extract_variables_from_file(templates_dir / doc.template)
+        for status in classify_variables(
+            variables, field_keys, has_prepare_hook=bool(schema.prepare)
+        ):
+            if status.source == "missing":
+                warnings.append(f"{doc.key}: '{status.name}' has no schema field or hook")
+    return warnings
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     schema_path = Path(args.schema)
     try:
@@ -39,6 +63,11 @@ def cmd_check(args: argparse.Namespace) -> int:
         return 1
     data = load_schema_dict(schema_path)
     print(f"OK: {data['name']} ({data['id']}) v{data.get('version', 1)}")
+
+    schema = schema_from_dict(data, source_path=schema_path)
+    templates_dir, _ = project_dirs_for(schema_path)
+    for warning in _mismatch_warnings(schema, templates_dir):
+        print(f"WARNING: {warning}")
     return 0
 
 
@@ -130,6 +159,33 @@ def cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extract(args: argparse.Namespace) -> int:
+    template_path = Path(args.template)
+    variables = extract_variables_from_file(template_path)
+
+    if args.scaffold:
+        print(yaml.dump(scaffold_schema(template_path), sort_keys=False))
+        return 0
+
+    if args.check:
+        data = load_schema_dict(args.check)
+        schema = schema_from_dict(data, source_path=args.check)
+        field_keys = set(schema.field_map())
+        exit_code = 0
+        for status in classify_variables(
+            variables, field_keys, has_prepare_hook=bool(schema.prepare)
+        ):
+            label = {"field": "OK", "hook": "HOOK", "missing": "MISSING"}[status.source]
+            print(f"{status.name}: {label}")
+            if status.source == "missing":
+                exit_code = 1
+        return exit_code
+
+    for name in variables:
+        print(name)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="configgen", description=f"{APP_NAME} CLI")
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
@@ -150,6 +206,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_generate.add_argument("--output", help="Output root directory (default: ./output)")
     p_generate.add_argument("--username", default="unknown", help="Username recorded in the output")
     p_generate.set_defaults(func=cmd_generate)
+
+    p_extract = subparsers.add_parser("extract", help="List a template's variables")
+    p_extract.add_argument("template", help="Path to a Jinja2 template file")
+    p_extract.add_argument(
+        "--scaffold", action="store_true", help="Print a skeleton schema YAML instead"
+    )
+    p_extract.add_argument("--check", help="Report mismatches against this schema YAML")
+    p_extract.set_defaults(func=cmd_extract)
 
     return parser
 
