@@ -135,6 +135,13 @@ def project_data_dir_for(schema_path: str | Path) -> Path:
     return root / "data"
 
 
+def project_history_dir_for(schema_path: str | Path) -> Path:
+    """The sibling `<root>/.history/` folder where saved schema+template
+    versions live, per §10 of the build plan."""
+    root = Path(schema_path).resolve().parent.parent
+    return root / ".history"
+
+
 def find_schema_files(schemas_dir: str | Path) -> list[Path]:
     schemas_dir = Path(schemas_dir)
     if not schemas_dir.is_dir():

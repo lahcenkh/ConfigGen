@@ -37,10 +37,18 @@ from configgen.core.schema import (
     load_schema_dict,
     project_data_dir_for,
     project_dirs_for,
+    project_history_dir_for,
     schema_from_dict,
 )
 from configgen.core.schema_validator import SchemaValidationError, validate_schema
 from configgen.core.validators import FieldValidationError, validate_values
+from configgen.core.versioning import (
+    VersioningError,
+    diff_versions,
+    list_versions,
+    restore_version,
+    save_version,
+)
 from configgen.paths import data_dir, output_dir, schemas_dir, users_db_path
 from configgen.prepare import PrepareError, Services, run_prepare_hook
 
@@ -486,6 +494,76 @@ def cmd_diff(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_history(args: argparse.Namespace) -> int:
+    directory = Path(args.dir) if args.dir else schemas_dir()
+    try:
+        schema_path = _find_schema_path(args.id, directory)
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    schema_id = load_schema_dict(schema_path)["id"]
+    templates_path, _ = project_dirs_for(schema_path)
+    history_root = project_history_dir_for(schema_path)
+
+    if args.save:
+        if not args.author:
+            print("ERROR: --author is required with --save", file=sys.stderr)
+            return 1
+        try:
+            entry = save_version(
+                history_root, schema_path, templates_path, author=args.author, note=args.note
+            )
+        except VersioningError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(f"saved version {entry.version} (author={entry.author})")
+        return 0
+
+    if args.restore is not None:
+        if not args.author:
+            print("ERROR: --author is required with --restore", file=sys.stderr)
+            return 1
+        try:
+            entry = restore_version(
+                history_root,
+                schema_path,
+                templates_path,
+                version=args.restore,
+                author=args.author,
+                note=args.note,
+            )
+        except VersioningError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(f"restored version {args.restore} as new version {entry.version}")
+        return 0
+
+    if args.diff:
+        version_a, version_b = args.diff
+        try:
+            diffs = diff_versions(history_root, schema_id, version_a, version_b)
+        except VersioningError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        if not diffs:
+            print("no differences")
+            return 0
+        for filename, text in diffs.items():
+            print(f"--- {filename} ---")
+            print(text, end="")
+        return 0
+
+    entries = list_versions(history_root, schema_id)
+    if not entries:
+        print(f"No history found for '{schema_id}'")
+        return 0
+    for entry in entries:
+        suffix = f" - {entry.note}" if entry.note else ""
+        print(f"v{entry.version}  {entry.timestamp}  {entry.author}{suffix}")
+    return 0
+
+
 def cmd_extract(args: argparse.Namespace) -> int:
     template_path = Path(args.template)
     variables = extract_variables_from_file(template_path)
@@ -777,6 +855,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Document key to compare, for --last on a multi-document schema (default: primary)",
     )
     p_diff.set_defaults(func=cmd_diff)
+
+    p_history = subparsers.add_parser("history", help="Schema/template version history")
+    p_history.add_argument("id", help="Schema id")
+    p_history.add_argument("--dir", help="Schemas directory (default: resources/schemas)")
+    p_history.add_argument(
+        "--save", action="store_true", help="Snapshot the current schema+templates as a new version"
+    )
+    p_history.add_argument(
+        "--restore",
+        type=int,
+        metavar="VERSION",
+        help="Restore a historical version as a new version",
+    )
+    p_history.add_argument(
+        "--diff",
+        nargs=2,
+        type=int,
+        metavar=("VERSION_A", "VERSION_B"),
+        help="Show a unified diff of every file that changed between two versions",
+    )
+    p_history.add_argument("--author", help="Author recorded for --save/--restore")
+    p_history.add_argument("--note", help="Note recorded for --save/--restore")
+    p_history.set_defaults(func=cmd_history)
 
     p_extract = subparsers.add_parser("extract", help="List a template's variables")
     p_extract.add_argument("template", help="Path to a Jinja2 template file")
