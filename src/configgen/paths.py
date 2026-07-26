@@ -29,3 +29,7 @@ def data_dir() -> Path:
 
 def output_dir() -> Path:
     return app_root() / "output"
+
+
+def users_db_path() -> Path:
+    return app_root() / "users.db"
