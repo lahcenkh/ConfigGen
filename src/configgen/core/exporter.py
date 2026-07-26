@@ -70,11 +70,33 @@ def build_profile_filename(
 
 def profile_filename_for(doc_filename: str, doc_key: str) -> str:
     """Given one document's saved filename, returns the shared profile's
-    filename by stripping that document's key token back out."""
+    filename by stripping that document's key token back out.
+
+    Strips the *rightmost* `_{doc_key}_` — not every token equal to
+    doc_key — because schema ids are conventionally snake_case (e.g.
+    `primary_config`) and can otherwise contain the doc key as a substring.
+    build_filename always places the real doc-key segment last (right
+    before an optional variant and the timestamp), so the rightmost match
+    is always the right one.
+    """
     stem = doc_filename.rsplit(".", 1)[0]
-    tokens = stem.split("_")
-    tokens = [t for t in tokens if t != doc_key]
-    return "_".join(tokens) + ".json"
+    marker = f"_{doc_key}_"
+    idx = stem.rfind(marker)
+    if idx == -1:
+        raise ValueError(f"doc_key '{doc_key}' not found in filename '{doc_filename}'")
+    stem = stem[:idx] + stem[idx + len(marker) - 1 :]  # keep one separating underscore
+    return stem + ".json"
+
+
+def resolve_profile_path(doc_path: str | Path, doc_key: str) -> Path:
+    """The "reopen" operation (§7/§19): given the path to one saved
+    document, finds its sibling shared profile .json on disk."""
+    doc_path = Path(doc_path)
+    return doc_path.parent / profile_filename_for(doc_path.name, doc_key)
+
+
+def load_profile(profile_path: str | Path) -> dict:
+    return json.loads(Path(profile_path).read_text(encoding="utf-8"))
 
 
 @dataclass

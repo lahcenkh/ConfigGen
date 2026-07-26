@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from configgen import cli
+from configgen.core.exporter import load_profile, resolve_profile_path
 
 EXAMPLES_ROOT = Path(__file__).resolve().parents[1] / "examples"
 SCHEMAS_DIR = EXAMPLES_ROOT / "schemas"
@@ -15,6 +16,17 @@ SCHEMA_PATH = SCHEMAS_DIR / "server_provisioning.yaml"
 ROUTER_SCHEMA_PATH = SCHEMAS_DIR / "router_base_config.yaml"
 DEVICE_SCHEMA_PATH = SCHEMAS_DIR / "device_onboarding.yaml"
 PROVISIONING_SCHEMA_PATH = SCHEMAS_DIR / "device_provisioning.yaml"
+HA_PAIR_SCHEMA_PATH = SCHEMAS_DIR / "ha_pair_config.yaml"
+
+VALID_HA_PAIR_VALUES = {
+    "pair_name": "edge-pair-01",
+    "shared_vlan": 20,
+    "subnet": "10.40.50.0/24",
+    "primary_ip": "10.40.50.2",
+    "backup_ip": "10.40.50.3",
+    "vrrp_group": 5,
+    "vrrp_vip": "10.40.50.1",
+}
 
 VALID_DEVICE_VALUES = {
     "region": "us-east",
@@ -85,12 +97,21 @@ def test_check_valid_device_provisioning_schema(capsys):
     assert "device_provisioning" in out
 
 
+def test_check_valid_ha_pair_schema(capsys):
+    code = cli.main(["check", str(HA_PAIR_SCHEMA_PATH)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "OK" in out
+    assert "ha_pair_config" in out
+
+
 def test_check_examples_have_no_mismatch_warnings(capsys):
     for schema_path in (
         SCHEMA_PATH,
         ROUTER_SCHEMA_PATH,
         DEVICE_SCHEMA_PATH,
         PROVISIONING_SCHEMA_PATH,
+        HA_PAIR_SCHEMA_PATH,
     ):
         code = cli.main(["check", str(schema_path)])
         out = capsys.readouterr().out
@@ -395,6 +416,57 @@ def test_generate_prepare_hook_reports_clean_error_when_database_missing(tmp_pat
     assert code == 1
     assert "no database configured" in err
     assert "Traceback" not in err
+
+
+def test_generate_ha_pair_writes_both_documents_and_reopens(tmp_path: Path, capsys):
+    values_path = tmp_path / "values.json"
+    values_path.write_text(json.dumps(VALID_HA_PAIR_VALUES), encoding="utf-8")
+    output_dir = tmp_path / "out"
+
+    code = cli.main(
+        [
+            "generate",
+            "ha_pair_config",
+            "--dir",
+            str(SCHEMAS_DIR),
+            "--values",
+            str(values_path),
+            "--output",
+            str(output_dir),
+            "--username",
+            "tester",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "primary:" in out
+    assert "backup:" in out
+    assert "profile:" in out
+
+    saved_dir = output_dir / "tester" / "ungrouped"
+    primary_path = next(saved_dir.glob("*primary*.txt"))
+    backup_path = next(saved_dir.glob("*backup*.txt"))
+    profile_path = next(saved_dir.glob("*.json"))
+
+    primary_text = primary_path.read_text(encoding="utf-8")
+    backup_text = backup_path.read_text(encoding="utf-8")
+    assert "hostname edge-pair-01-primary" in primary_text
+    assert "ip address 10.40.50.2 255.255.255.0" in primary_text
+    assert "vrrp 5 priority 110" in primary_text
+    assert "hostname edge-pair-01-backup" in backup_text
+    assert "ip address 10.40.50.3 255.255.255.0" in backup_text
+    assert "vrrp 5 priority 90" in backup_text
+    # both share the same VRRP virtual IP
+    assert "vrrp 5 ip 10.40.50.1" in primary_text
+    assert "vrrp 5 ip 10.40.50.1" in backup_text
+
+    # Reopen: from either saved document alone, resolve the shared profile
+    # and recover the exact inputs that produced this multi-doc set.
+    assert resolve_profile_path(primary_path, "primary") == profile_path
+    assert resolve_profile_path(backup_path, "backup") == profile_path
+    profile = load_profile(profile_path)
+    assert profile["inputs"] == VALID_HA_PAIR_VALUES
+    assert profile["schema_id"] == "ha_pair_config"
 
 
 def test_db_check_all_queries_ok(capsys):

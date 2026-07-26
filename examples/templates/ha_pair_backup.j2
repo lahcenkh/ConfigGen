@@ -1,0 +1,9 @@
+hostname {{ pair_name }}-backup
+!
+interface Vlan{{ shared_vlan }}
+ ip address {{ backup_ip }} {{ subnet.netmask }}
+ vrrp {{ vrrp_group }} ip {{ vrrp_vip }}
+ vrrp {{ vrrp_group }} priority 90
+ no shutdown
+!
+end

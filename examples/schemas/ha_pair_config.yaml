@@ -1,0 +1,64 @@
+name: "HA Pair Base Config"
+id: ha_pair_config
+version: 1
+status: published
+description: "Multi-document example: one schema, two related outputs. A single form generates the primary and backup node configs for a VRRP pair together, sharing the VLAN/subnet/virtual IP but each with its own management IP and VRRP priority. Form-only — no database, no prepare hook."
+tags: ["example", "multi-document", "networking"]
+identity_field: pair_name
+comment_prefix: "!"
+documents:
+  - key: primary
+    label: "Primary Node"
+    template: ha_pair_primary.j2
+  - key: backup
+    label: "Backup Node"
+    template: ha_pair_backup.j2
+fields:
+  - key: pair_name
+    label: "Pair name"
+    type: string
+    section: "Identity"
+    required: true
+    pattern: '^[a-z0-9-]{1,63}$'
+    example: "edge-pair-01"
+
+  - key: shared_vlan
+    label: "Shared VLAN"
+    type: int
+    section: "Network"
+    required: true
+    min: 1
+    max: 4094
+
+  - key: subnet
+    label: "Shared subnet"
+    type: network
+    section: "Network"
+    required: true
+    example: "10.40.50.0/24"
+
+  - key: primary_ip
+    label: "Primary node IP"
+    type: ip
+    section: "Network"
+    required: true
+
+  - key: backup_ip
+    label: "Backup node IP"
+    type: ip
+    section: "Network"
+    required: true
+
+  - key: vrrp_group
+    label: "VRRP group"
+    type: int
+    section: "Redundancy"
+    required: true
+    min: 1
+    max: 255
+
+  - key: vrrp_vip
+    label: "VRRP virtual IP"
+    type: ip
+    section: "Redundancy"
+    required: true
