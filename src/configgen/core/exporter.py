@@ -99,6 +99,17 @@ def load_profile(profile_path: str | Path) -> dict:
     return json.loads(Path(profile_path).read_text(encoding="utf-8"))
 
 
+def resolve_output_dir(
+    output_root: Path | str, username: str, schema: Schema, *, subdir: str | None = None
+) -> Path:
+    """`{output_root}/{username}/{group}/[subdir]` — the one place this
+    layout is decided, so a bulk batch folder (§8) and a single save
+    (below) can never disagree about where things land."""
+    group_slug = _slug(schema.group) if schema.group else "ungrouped"
+    target = Path(output_root) / username / group_slug
+    return target / subdir if subdir else target
+
+
 @dataclass
 class SaveResult:
     output_dir: Path
@@ -115,12 +126,12 @@ def save_documents(
     username: str = "unknown",
     variant: str | None = None,
     timestamp: datetime | None = None,
+    subdir: str | None = None,
 ) -> SaveResult:
     """Writes one .txt per rendered document plus a shared .json profile,
-    under `{output_root}/{username}/{group}/`."""
+    under `{output_root}/{username}/{group}/[subdir]/`."""
     timestamp = timestamp or datetime.now()
-    group_slug = _slug(schema.group) if schema.group else "ungrouped"
-    target_dir = Path(output_root) / username / group_slug
+    target_dir = resolve_output_dir(output_root, username, schema, subdir=subdir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     document_paths: dict[str, Path] = {}

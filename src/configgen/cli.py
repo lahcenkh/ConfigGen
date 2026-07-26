@@ -4,6 +4,7 @@ check / list / generate for form-only (no prepare hook, no DB) configs."""
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ from configgen.core.auth import (
     require_role,
     visible_schemas,
 )
+from configgen.core.bulk import read_rows, run_bulk
 from configgen.core.db import Database, DatabaseError, health_check, load_queries
 from configgen.core.exporter import save_documents
 from configgen.core.extractor import (
@@ -321,6 +323,131 @@ def cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bulk(args: argparse.Namespace) -> int:
+    directory = Path(args.dir) if args.dir else schemas_dir()
+    try:
+        schema_path = _find_schema_path(args.schema, directory)
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    data = load_schema_dict(schema_path)
+    templates_dir, prepare_dir = project_dirs_for(schema_path)
+    try:
+        validate_schema(
+            data,
+            templates_dir=templates_dir,
+            prepare_dir=prepare_dir,
+            known_queries=_known_queries_for(schema_path),
+        )
+    except SchemaValidationError as exc:
+        print(f"FAILED: {schema_path}", file=sys.stderr)
+        for issue in exc.issues:
+            print(f"  - {issue}", file=sys.stderr)
+        return 1
+
+    schema = schema_from_dict(data, source_path=schema_path)
+
+    store = None
+    user = None
+    if getattr(args, "api_key", None) or getattr(args, "password", None):
+        store = _auth_store_for(args)
+        try:
+            user = _authenticate_optional(args, store)
+        except AuthError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        user_groups = store.groups_for_user(user.username)
+        if not visible_schemas(user, [schema], user_groups):
+            print(
+                f"ERROR: user '{user.username}' ({user.role}) cannot access "
+                f"schema '{schema.id}' (wrong group or status)",
+                file=sys.stderr,
+            )
+            return 1
+    effective_username = user.username if user else args.username
+
+    if args.query:
+        queries_path = project_data_dir_for(schema_path) / "queries.yaml"
+        if not queries_path.is_file():
+            print(f"ERROR: no queries.yaml found at {queries_path}", file=sys.stderr)
+            return 1
+        query_db = Database.from_queries_file(queries_path)
+        params = dict(p.split("=", 1) for p in (args.param or []))
+        try:
+            rows = query_db.query(args.query, **params)
+        except DatabaseError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            print(
+                f"ERROR: query '{args.query}' must be declared with `returns: rows` "
+                "for bulk generation (one dict per row)",
+                file=sys.stderr,
+            )
+            return 1
+        source = f"query:{args.query}"
+        database = query_db
+    else:
+        try:
+            rows = read_rows(args.input)
+        except OSError as exc:
+            print(f"ERROR: could not read {args.input}: {exc}", file=sys.stderr)
+            return 1
+        source = str(Path(args.input).resolve())
+        try:
+            database = _database_for(schema, schema_path)
+        except DatabaseError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+
+    if not rows:
+        print(f"ERROR: no rows found in {source}", file=sys.stderr)
+        return 1
+
+    result = run_bulk(
+        schema,
+        rows,
+        templates_dir=templates_dir,
+        prepare_dir=prepare_dir,
+        output_root=Path(args.output) if args.output else output_dir(),
+        source=source,
+        username=effective_username,
+        database=database,
+        services=_services_for(schema_path),
+    )
+
+    print(f"{result.valid_count} valid, {result.error_count} errors")
+    for row_error in result.row_errors:
+        messages = "; ".join(f"{k}: {v}" for k, v in row_error.errors.items())
+        print(f"  row {row_error.row_number}: {messages}")
+    print(f"output: {result.output_dir}")
+    print(f"manifest: {result.manifest_path}")
+
+    if args.errors_out and result.row_errors:
+        with open(args.errors_out, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["row_number", "errors"])
+            for row_error in result.row_errors:
+                messages = "; ".join(f"{k}: {v}" for k, v in row_error.errors.items())
+                writer.writerow([row_error.row_number, messages])
+
+    if user is not None:
+        for row in result.generated:
+            for filename in row["documents"].values():
+                store.record_generation(
+                    user,
+                    schema_id=schema.id,
+                    schema_version=schema.version,
+                    form_inputs=row["inputs"],
+                    output_filename=filename,
+                    group_name=schema.group,
+                    bulk_batch_id=result.batch_id,
+                )
+
+    return 0
+
+
 def cmd_extract(args: argparse.Namespace) -> int:
     template_path = Path(args.template)
     variables = extract_variables_from_file(template_path)
@@ -561,6 +688,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--users-db", help="Path to users.db (default: users.db in the app root)"
     )
     p_generate.set_defaults(func=cmd_generate)
+
+    p_bulk = subparsers.add_parser("bulk", help="Batch-generate a config from many rows")
+    p_bulk.add_argument("schema", help="Schema id or path to its YAML file")
+    p_bulk.add_argument("--dir", help="Schemas directory (default: resources/schemas)")
+    bulk_source = p_bulk.add_mutually_exclusive_group(required=True)
+    bulk_source.add_argument("--input", help="Path to a CSV or XLSX file, one row per config")
+    bulk_source.add_argument(
+        "--query", help="Named query from queries.yaml returning multiple rows"
+    )
+    p_bulk.add_argument(
+        "--param",
+        action="append",
+        help="key=value parameter for --query (repeatable)",
+    )
+    p_bulk.add_argument("--output", help="Output root directory (default: ./output)")
+    p_bulk.add_argument(
+        "--errors-out", help="Write failed rows and their error messages to this CSV file"
+    )
+    p_bulk.add_argument(
+        "--username",
+        default="unknown",
+        help="Username recorded in the output; add --password or --api-key to "
+        "authenticate for real and enforce role/group access + logging",
+    )
+    p_bulk.add_argument("--password", help="Password (with --username) to authenticate")
+    p_bulk.add_argument(
+        "--api-key", help="API key to authenticate with instead of --username/--password"
+    )
+    p_bulk.add_argument("--users-db", help="Path to users.db (default: users.db in the app root)")
+    p_bulk.set_defaults(func=cmd_bulk)
 
     p_extract = subparsers.add_parser("extract", help="List a template's variables")
     p_extract.add_argument("template", help="Path to a Jinja2 template file")

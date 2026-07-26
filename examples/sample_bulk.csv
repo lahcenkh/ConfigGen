@@ -1,0 +1,5 @@
+hostname,management_ip,subnet,timezone,admin_username,ssh_port,enable_firewall,notes
+web01-nyc,10.20.30.5,10.20.30.0/24,America/New_York,svcadmin,22,true,initial batch
+web02-nyc,10.20.30.6,10.20.30.0/24,America/New_York,svcadmin,22,true,initial batch
+web01-lon,10.40.50.5,10.40.50.0/24,Europe/London,svcadmin,2222,false,initial batch
+BAD HOST!,10.20.30.7,10.20.30.0/24,America/New_York,svcadmin,22,true,intentionally invalid hostname
