@@ -14,12 +14,18 @@ DATA_DIR = EXAMPLES_ROOT / "data"
 SCHEMA_PATH = SCHEMAS_DIR / "server_provisioning.yaml"
 ROUTER_SCHEMA_PATH = SCHEMAS_DIR / "router_base_config.yaml"
 DEVICE_SCHEMA_PATH = SCHEMAS_DIR / "device_onboarding.yaml"
+PROVISIONING_SCHEMA_PATH = SCHEMAS_DIR / "device_provisioning.yaml"
 
 VALID_DEVICE_VALUES = {
     "region": "us-east",
     "device_name": "edge-01",
     "asset_tag": "AT-10234",
     "notes": "initial onboarding",
+}
+
+VALID_PROVISIONING_VALUES = {
+    "device_name": "edge-01",
+    "subnet": "10.20.30.0/24",
 }
 
 VALID_VALUES = {
@@ -71,8 +77,21 @@ def test_check_valid_device_onboarding_schema(capsys):
     assert "device_onboarding" in out
 
 
+def test_check_valid_device_provisioning_schema(capsys):
+    code = cli.main(["check", str(PROVISIONING_SCHEMA_PATH)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "OK" in out
+    assert "device_provisioning" in out
+
+
 def test_check_examples_have_no_mismatch_warnings(capsys):
-    for schema_path in (SCHEMA_PATH, ROUTER_SCHEMA_PATH, DEVICE_SCHEMA_PATH):
+    for schema_path in (
+        SCHEMA_PATH,
+        ROUTER_SCHEMA_PATH,
+        DEVICE_SCHEMA_PATH,
+        PROVISIONING_SCHEMA_PATH,
+    ):
         code = cli.main(["check", str(schema_path)])
         out = capsys.readouterr().out
         assert code == 0
@@ -283,6 +302,98 @@ def test_generate_reports_clean_error_when_database_missing(tmp_path: Path, caps
     err = capsys.readouterr().err
     assert code == 1
     assert "queries.yaml" in err
+    assert "Traceback" not in err
+
+
+def test_generate_device_provisioning_writes_output(tmp_path: Path, capsys):
+    values_path = tmp_path / "values.json"
+    values_path.write_text(json.dumps(VALID_PROVISIONING_VALUES), encoding="utf-8")
+    output_dir = tmp_path / "out"
+
+    code = cli.main(
+        [
+            "generate",
+            "device_provisioning",
+            "--dir",
+            str(SCHEMAS_DIR),
+            "--values",
+            str(values_path),
+            "--output",
+            str(output_dir),
+            "--username",
+            "tester",
+        ]
+    )
+    assert code == 0
+
+    saved_dir = output_dir / "tester" / "ungrouped"
+    txt_files = list(saved_dir.glob("*.txt"))
+    assert len(txt_files) == 1
+    text = txt_files[0].read_text(encoding="utf-8")
+    assert "Name:          edge-01" in text
+    assert "Vendor:        Acme Networks" in text
+    assert "Management IP: 10.20.30.1" in text
+    assert text.startswith("#")
+
+
+def test_generate_device_provisioning_rejects_unknown_device(tmp_path: Path, capsys):
+    bad_values = {**VALID_PROVISIONING_VALUES, "device_name": "ghost-device"}
+    values_path = tmp_path / "values.json"
+    values_path.write_text(json.dumps(bad_values), encoding="utf-8")
+
+    code = cli.main(
+        [
+            "generate",
+            "device_provisioning",
+            "--dir",
+            str(SCHEMAS_DIR),
+            "--values",
+            str(values_path),
+            "--output",
+            str(tmp_path / "out"),
+        ]
+    )
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "device_name" in err
+    assert "ghost-device" in err
+
+
+def test_generate_prepare_hook_reports_clean_error_when_database_missing(tmp_path: Path, capsys):
+    # A prepare hook that calls services.db.query(...) should fail cleanly,
+    # not with an AttributeError, when there's no queries.yaml at all.
+    project = tmp_path / "project"
+    (project / "schemas").mkdir(parents=True)
+    (project / "templates").mkdir()
+    (project / "prepare").mkdir()
+    (project / "schemas" / "device_provisioning.yaml").write_text(
+        PROVISIONING_SCHEMA_PATH.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (project / "templates" / "device_provisioning.j2").write_text(
+        (TEMPLATES_DIR / "device_provisioning.j2").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (project / "prepare" / "device_provisioning.py").write_text(
+        (EXAMPLES_ROOT / "prepare" / "device_provisioning.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    values_path = tmp_path / "values.json"
+    values_path.write_text(json.dumps(VALID_PROVISIONING_VALUES), encoding="utf-8")
+
+    code = cli.main(
+        [
+            "generate",
+            "device_provisioning",
+            "--dir",
+            str(project / "schemas"),
+            "--values",
+            str(values_path),
+            "--output",
+            str(tmp_path / "out"),
+        ]
+    )
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "no database configured" in err
     assert "Traceback" not in err
 
 

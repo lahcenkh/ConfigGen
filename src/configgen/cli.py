@@ -30,6 +30,7 @@ from configgen.core.schema import (
 from configgen.core.schema_validator import SchemaValidationError, validate_schema
 from configgen.core.validators import FieldValidationError, validate_values
 from configgen.paths import data_dir, output_dir, schemas_dir
+from configgen.prepare import PrepareError, Services, run_prepare_hook
 
 
 def _known_queries_for(schema_path: Path) -> set[str] | None:
@@ -54,6 +55,16 @@ def _database_for(schema: Schema, schema_path: Path) -> Database | None:
             f"but no queries.yaml found at {queries_path}"
         )
     return Database.from_queries_file(queries_path)
+
+
+def _services_for(schema_path: Path) -> Services:
+    """Builds the Services a prepare hook runs with. `db` is a real Database
+    if the project has a queries.yaml, else Services falls back to a
+    NoDatabase that raises cleanly only if the hook actually tries to use
+    it — a hook that doesn't touch `services.db` works with no db at all."""
+    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
+    db = Database.from_queries_file(queries_path) if queries_path.is_file() else None
+    return Services(db=db)
 
 
 def _validate_file(schema_path: Path) -> None:
@@ -157,13 +168,6 @@ def cmd_generate(args: argparse.Namespace) -> int:
         return 1
 
     schema = schema_from_dict(data, source_path=schema_path)
-    if schema.prepare:
-        print(
-            f"ERROR: schema '{schema.id}' declares a prepare hook; "
-            "prepare-hook generation lands in phase 4",
-            file=sys.stderr,
-        )
-        return 1
 
     try:
         database = _database_for(schema, schema_path)
@@ -173,7 +177,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
     raw_values = json.loads(Path(args.values).read_text(encoding="utf-8"))
     try:
-        context = validate_values(schema, raw_values, database=database)
+        values = validate_values(schema, raw_values, database=database)
     except FieldValidationError as exc:
         print("FAILED validation:", file=sys.stderr)
         for key, message in exc.errors.items():
@@ -182,6 +186,27 @@ def cmd_generate(args: argparse.Namespace) -> int:
     except DatabaseError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+
+    if schema.prepare:
+        hook_context = {
+            "username": args.username,
+            "schema_id": schema.id,
+            "schema_version": schema.version,
+        }
+        try:
+            context = run_prepare_hook(
+                prepare_dir, schema.prepare, values, hook_context, _services_for(schema_path)
+            )
+        except PrepareError as exc:
+            print("FAILED prepare hook:", file=sys.stderr)
+            for key, message in exc.errors.items():
+                print(f"  - {key}: {message}", file=sys.stderr)
+            return 1
+        except DatabaseError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+    else:
+        context = values
 
     try:
         rendered = render_documents(

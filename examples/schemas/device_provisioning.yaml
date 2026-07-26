@@ -1,0 +1,27 @@
+name: "Device Provisioning (Derived)"
+id: device_provisioning
+version: 1
+status: published
+description: "Tier 2 example: a prepare hook looks up the device's vendor via the database and derives its management IP from a subnet, showing the full two-tier engine (form -> validate -> prepare hook -> render)."
+tags: ["example", "prepare-hook", "db-backed"]
+identity_field: device_name
+prepare: device_provisioning
+comment_prefix: "#"
+template: device_provisioning.j2
+fields:
+  - key: device_name
+    label: "Device name"
+    type: string
+    section: "Identity"
+    required: true
+    pattern: '^[a-z0-9-]{1,63}$'
+    example: "edge-01"
+    help: "Must already exist in the device inventory — the prepare hook looks it up."
+
+  - key: subnet
+    label: "Management subnet"
+    type: network
+    section: "Network"
+    required: true
+    example: "10.20.30.0/24"
+    help: "The device's management IP is derived as the first usable host in this subnet."

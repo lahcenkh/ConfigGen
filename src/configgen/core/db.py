@@ -92,6 +92,21 @@ class Database:
         return self.query(query_name)
 
 
+class NoDatabase:
+    """Stands in for `Services.db` when a project has no queries.yaml.
+
+    A prepare hook that calls `services.db.query(...)` unconditionally would
+    otherwise hit an AttributeError on `None` — this raises the same
+    DatabaseError a real Database would for an unreachable file, so the
+    error a hook author sees is always the same shape."""
+
+    def query(self, query_name: str, /, **params: object) -> object:
+        raise DatabaseError("no database configured for this project (queries.yaml not found)")
+
+    def all(self, query_name: str, /) -> object:
+        raise DatabaseError("no database configured for this project (queries.yaml not found)")
+
+
 def _shape(returns: str, rows: list[sqlite3.Row]) -> object:
     if returns == "scalar_list":
         return [row[0] for row in rows]
