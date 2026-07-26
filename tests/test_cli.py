@@ -8,6 +8,7 @@ from configgen import cli
 EXAMPLES_ROOT = Path(__file__).resolve().parents[1] / "examples"
 SCHEMAS_DIR = EXAMPLES_ROOT / "schemas"
 SCHEMA_PATH = SCHEMAS_DIR / "server_provisioning.yaml"
+ROUTER_SCHEMA_PATH = SCHEMAS_DIR / "router_base_config.yaml"
 
 VALID_VALUES = {
     "hostname": "web01-nyc",
@@ -20,6 +21,19 @@ VALID_VALUES = {
     "notes": "initial build",
 }
 
+VALID_ROUTER_VALUES = {
+    "hostname": "rtr-core-01",
+    "mgmt_interface": "GigabitEthernet0/0",
+    "mgmt_ip": "10.10.10.1/24",
+    "vlan_id": 10,
+    "enable_ospf": True,
+    "ospf_process_id": 1,
+    "ospf_area": 0,
+    "ntp_server": "192.0.2.123",
+    "snmp_community": "public-ro",
+    "notes": "core router example",
+}
+
 
 def test_check_valid_schema(capsys):
     code = cli.main(["check", str(SCHEMA_PATH)])
@@ -27,6 +41,14 @@ def test_check_valid_schema(capsys):
     assert code == 0
     assert "OK" in out
     assert "server_provisioning" in out
+
+
+def test_check_valid_router_schema(capsys):
+    code = cli.main(["check", str(ROUTER_SCHEMA_PATH)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "OK" in out
+    assert "router_base_config" in out
 
 
 def test_check_invalid_schema(tmp_path: Path, capsys):
@@ -43,6 +65,7 @@ def test_list_examples(capsys):
     out = capsys.readouterr().out
     assert code == 0
     assert "server_provisioning" in out
+    assert "router_base_config" in out
     assert "published" in out
 
 
@@ -92,6 +115,42 @@ def test_generate_writes_output(tmp_path: Path, capsys):
     assert "tester" in text
     assert "primary:" in out
     assert "profile:" in out
+
+
+def test_generate_router_example_writes_output(tmp_path: Path, capsys):
+    values_path = tmp_path / "values.json"
+    values_path.write_text(json.dumps(VALID_ROUTER_VALUES), encoding="utf-8")
+    output_dir = tmp_path / "out"
+
+    code = cli.main(
+        [
+            "generate",
+            "router_base_config",
+            "--dir",
+            str(SCHEMAS_DIR),
+            "--values",
+            str(values_path),
+            "--output",
+            str(output_dir),
+            "--username",
+            "tester",
+        ]
+    )
+    assert code == 0
+
+    saved_dir = output_dir / "tester" / "ungrouped"
+    txt_files = list(saved_dir.glob("*.txt"))
+    assert len(txt_files) == 1
+
+    text = txt_files[0].read_text(encoding="utf-8")
+    assert "hostname rtr-core-01" in text
+    assert "interface GigabitEthernet0/0" in text
+    assert "ip address 10.10.10.1 255.255.255.0" in text
+    assert "router ospf 1" in text
+    assert "area 0" in text
+    assert "ntp server 192.0.2.123" in text
+    assert "snmp-server community public-ro RO" in text
+    assert text.startswith("!")
 
 
 def test_generate_reports_validation_errors(tmp_path: Path, capsys):

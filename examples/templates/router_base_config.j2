@@ -1,0 +1,20 @@
+hostname {{ hostname }}
+!
+interface {{ mgmt_interface }}
+ ip address {{ mgmt_ip.ip }} {{ mgmt_ip.netmask }}
+ no shutdown
+!
+vlan {{ vlan_id }}
+!
+{% if enable_ospf %}
+router ospf {{ ospf_process_id }}
+ network {{ mgmt_ip.ip }} 0.0.0.255 area {{ ospf_area }}
+!
+{% endif %}
+ntp server {{ ntp_server }}
+snmp-server community {{ snmp_community }} RO
+!
+{% if notes %}
+! Notes: {{ notes }}
+{% endif %}
+end

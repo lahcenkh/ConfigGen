@@ -1,0 +1,85 @@
+name: "Generic Router Base Config"
+id: router_base_config
+version: 1
+status: published
+description: "Form-only example: a generic IOS-style router base config with a management interface, OSPF, NTP, and SNMP. Shows the tool's networking roots without any real customer data — no database, no prepare hook."
+tags: ["example", "form-only", "networking", "cisco-ios-style"]
+identity_field: hostname
+comment_prefix: "!"
+template: router_base_config.j2
+fields:
+  - key: hostname
+    label: "Hostname"
+    type: string
+    section: "Identity"
+    required: true
+    pattern: '^[a-z0-9-]{1,63}$'
+    example: "rtr-core-01"
+    help: "Lowercase letters, digits, and hyphens only."
+
+  - key: mgmt_interface
+    label: "Management interface"
+    type: string
+    section: "Network"
+    required: true
+    pattern: '^[A-Za-z]+[A-Za-z0-9/.]*$'
+    example: "GigabitEthernet0/0"
+
+  - key: mgmt_ip
+    label: "Management IP"
+    type: ip_cidr
+    section: "Network"
+    required: true
+    example: "10.10.10.1/24"
+    help: "Host address and prefix for the management interface."
+
+  - key: vlan_id
+    label: "Management VLAN"
+    type: int
+    section: "Network"
+    required: true
+    min: 1
+    max: 4094
+
+  - key: enable_ospf
+    label: "Enable OSPF"
+    type: bool
+    section: "Routing"
+    default: true
+
+  - key: ospf_process_id
+    label: "OSPF process ID"
+    type: int
+    section: "Routing"
+    required_if: {enable_ospf: true}
+    min: 1
+    max: 65535
+
+  - key: ospf_area
+    label: "OSPF area"
+    type: int
+    section: "Routing"
+    required_if: {enable_ospf: true}
+    min: 0
+    max: 4294967295
+
+  - key: ntp_server
+    label: "NTP server"
+    type: ip
+    section: "System"
+    required: true
+    example: "192.0.2.123"
+
+  - key: snmp_community
+    label: "SNMP RO community"
+    type: string
+    section: "System"
+    required: true
+    pattern: '^[A-Za-z0-9_-]{4,32}$'
+    example: "public-ro"
+
+  - key: notes
+    label: "Notes"
+    type: text
+    section: "Notes"
+    required: false
