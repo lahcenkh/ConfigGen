@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Host: {{ hostname }}
+set -euo pipefail
+
+hostnamectl set-hostname {{ hostname }}
+
+cat <<'NET' > /etc/network/interfaces.d/mgmt
+auto eth0
+iface eth0 inet static
+    address {{ management_ip }}
+    netmask {{ subnet.netmask }}
+    gateway {{ subnet.first_usable }}
+NET
+
+timedatectl set-timezone {{ timezone }}
+
+useradd -m -s /bin/bash {{ admin_username }}
+
+{% if enable_firewall %}
+ufw default deny incoming
+ufw allow {{ ssh_port }}/tcp
+ufw --force enable
+{% else %}
+# Firewall left disabled per request
+{% endif %}
+sed -i 's/^#Port 22/Port {{ ssh_port }}/' /etc/ssh/sshd_config
+systemctl restart sshd
+{% if notes %}
+
+# Notes: {{ notes }}
+{% endif %}

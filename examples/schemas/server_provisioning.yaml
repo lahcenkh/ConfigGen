@@ -1,0 +1,75 @@
+name: "Linux Server Base Provisioning"
+id: server_provisioning
+version: 1
+status: published
+description: "Form-only example: base provisioning script for a new Linux server. No database, no prepare hook — proves Tier 1 alone is enough for a simple config."
+tags: ["example", "form-only", "linux"]
+identity_field: hostname
+comment_prefix: "#"
+template: server_provisioning.j2
+fields:
+  - key: hostname
+    label: "Hostname"
+    type: string
+    section: "Identity"
+    required: true
+    pattern: '^[a-z0-9-]{1,63}$'
+    example: "web01-nyc"
+    help: "Lowercase letters, digits, and hyphens only."
+
+  - key: management_ip
+    label: "Management IP"
+    type: ip
+    section: "Network"
+    required: true
+    example: "10.20.30.5"
+
+  - key: subnet
+    label: "Management subnet"
+    type: network
+    section: "Network"
+    required: true
+    example: "10.20.30.0/24"
+    help: "Used to derive the netmask and default gateway."
+
+  - key: timezone
+    label: "Timezone"
+    type: choice
+    section: "System"
+    required: true
+    default: "UTC"
+    options:
+      - "UTC"
+      - "America/New_York"
+      - "America/Chicago"
+      - "America/Los_Angeles"
+      - "Europe/London"
+      - "Europe/Paris"
+
+  - key: admin_username
+    label: "Admin username"
+    type: string
+    section: "System"
+    required: true
+    pattern: '^[a-z][a-z0-9_-]{2,15}$'
+    example: "svcadmin"
+
+  - key: ssh_port
+    label: "SSH port"
+    type: port
+    section: "System"
+    required: true
+    pattern: '^\d{2,5}$'
+    example: "22"
+
+  - key: enable_firewall
+    label: "Enable host firewall"
+    type: bool
+    section: "System"
+    default: true
+
+  - key: notes
+    label: "Notes"
+    type: text
+    section: "Notes"
+    required: false
