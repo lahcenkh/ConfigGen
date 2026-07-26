@@ -1043,7 +1043,7 @@ These were found the hard way; the rebuild keeps them:
 | **7** | Bulk generation: CSV parsing, per-row validation, batch save, per-row logging + tests | `configgen bulk` processes a CSV end to end with log entries |
 | **8** | Diff: core differ, current-vs-last comparison + tests | `configgen diff` produces correct unified diff |
 | **9** | Versioning: history, manifest, restore + tests | saves create history, restore works |
-| **10** | Preflight: IOS/JunOS/generic checks, custom check registration + tests | preflight catches intentional syntax errors in test configs |
+| **10** | Preflight: IOS/JunOS/Nokia SR/Huawei VRP8/generic checks, custom check registration + tests | preflight catches intentional syntax errors in test configs |
 | **11** | Registry: auto-discover, orphan detection, reference validation | `configgen plugins` lists all, `--check` validates |
 | **12** | GUI: theme (+ dark mode), widgets, form, login, role-aware dashboard (search/filter/tiles per role), generator (preview + diff), keyboard shortcuts | full click-through: Admin sees everything, Config Eng sees only published |
 | **13** | Admin GUI: template editor (+ extract + history + publish/deprecate), user admin (create users, assign roles, manage groups, assign groups, API keys), generation log viewer, bulk dialog, about | all admin flows work, role permissions enforced in UI |

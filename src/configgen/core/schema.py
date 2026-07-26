@@ -142,6 +142,13 @@ def project_history_dir_for(schema_path: str | Path) -> Path:
     return root / ".history"
 
 
+def project_preflight_dir_for(schema_path: str | Path) -> Path:
+    """The sibling `<root>/preflight/` folder holding a project's own
+    `<platform>.py` checkers, per §11.3 of the build plan."""
+    root = Path(schema_path).resolve().parent.parent
+    return root / "preflight"
+
+
 def find_schema_files(schemas_dir: str | Path) -> list[Path]:
     schemas_dir = Path(schemas_dir)
     if not schemas_dir.is_dir():

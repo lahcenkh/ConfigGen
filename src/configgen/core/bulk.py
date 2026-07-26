@@ -22,6 +22,7 @@ import openpyxl
 
 from configgen.core.db import Database
 from configgen.core.exporter import resolve_output_dir, save_documents
+from configgen.core.preflight import run_preflight
 from configgen.core.renderer import RenderError, render_documents
 from configgen.core.schema import Schema
 from configgen.core.validators import FieldValidationError, validate_values
@@ -93,6 +94,7 @@ def run_bulk(
     username: str = "unknown",
     database: Database | None = None,
     services: Services | None = None,
+    preflight_dir: Path | str | None = None,
     variant: str | None = None,
     timestamp: datetime | None = None,
 ) -> BulkResult:
@@ -139,6 +141,13 @@ def run_bulk(
             row_errors.append(RowError(row_number=row_number, errors={"_render": str(exc)}))
             continue
 
+        preflight_warnings: dict[str, list[str]] = {}
+        if schema.preflight:
+            for doc_key, text in rendered.items():
+                doc_warnings = run_preflight(schema.preflight, text, preflight_dir)
+                if doc_warnings:
+                    preflight_warnings[doc_key] = doc_warnings
+
         result = save_documents(
             rendered,
             schema,
@@ -149,13 +158,14 @@ def run_bulk(
             timestamp=timestamp,
             subdir=batch_name,
         )
-        generated.append(
-            {
-                "row_number": row_number,
-                "inputs": raw_row,
-                "documents": {key: path.name for key, path in result.document_paths.items()},
-            }
-        )
+        row_entry = {
+            "row_number": row_number,
+            "inputs": raw_row,
+            "documents": {key: path.name for key, path in result.document_paths.items()},
+        }
+        if preflight_warnings:
+            row_entry["preflight_warnings"] = preflight_warnings
+        generated.append(row_entry)
 
     output_dir = resolve_output_dir(output_root, username, schema, subdir=batch_name)
     output_dir.mkdir(parents=True, exist_ok=True)

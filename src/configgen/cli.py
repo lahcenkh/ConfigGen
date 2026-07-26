@@ -30,6 +30,7 @@ from configgen.core.extractor import (
     extract_variables_from_file,
     scaffold_schema,
 )
+from configgen.core.preflight import run_preflight
 from configgen.core.renderer import RenderError, render_documents
 from configgen.core.schema import (
     Schema,
@@ -38,6 +39,7 @@ from configgen.core.schema import (
     project_data_dir_for,
     project_dirs_for,
     project_history_dir_for,
+    project_preflight_dir_for,
     schema_from_dict,
 )
 from configgen.core.schema_validator import SchemaValidationError, validate_schema
@@ -309,6 +311,12 @@ def cmd_generate(args: argparse.Namespace) -> int:
         print(f"FAILED to render: {exc}", file=sys.stderr)
         return 1
 
+    if schema.preflight:
+        preflight_dir = project_preflight_dir_for(schema_path)
+        for doc_key, text in rendered.items():
+            for warning in run_preflight(schema.preflight, text, preflight_dir):
+                print(f"PREFLIGHT WARNING ({doc_key}): {warning}")
+
     result = save_documents(
         rendered,
         schema,
@@ -424,12 +432,17 @@ def cmd_bulk(args: argparse.Namespace) -> int:
         username=effective_username,
         database=database,
         services=_services_for(schema_path),
+        preflight_dir=project_preflight_dir_for(schema_path),
     )
 
     print(f"{result.valid_count} valid, {result.error_count} errors")
     for row_error in result.row_errors:
         messages = "; ".join(f"{k}: {v}" for k, v in row_error.errors.items())
         print(f"  row {row_error.row_number}: {messages}")
+    for row in result.generated:
+        for doc_key, warnings in row.get("preflight_warnings", {}).items():
+            for warning in warnings:
+                print(f"  PREFLIGHT WARNING (row {row['row_number']}, {doc_key}): {warning}")
     print(f"output: {result.output_dir}")
     print(f"manifest: {result.manifest_path}")
 
