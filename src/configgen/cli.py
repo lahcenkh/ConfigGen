@@ -23,7 +23,8 @@ from configgen.core.auth import (
 )
 from configgen.core.bulk import read_rows, run_bulk
 from configgen.core.db import Database, DatabaseError, health_check, load_queries
-from configgen.core.exporter import save_documents
+from configgen.core.differ import diff_files, find_recent_outputs
+from configgen.core.exporter import resolve_output_dir, save_documents
 from configgen.core.extractor import (
     classify_variables,
     extract_variables_from_file,
@@ -448,6 +449,43 @@ def cmd_bulk(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_diff(args: argparse.Namespace) -> int:
+    if not args.last:
+        path_a, path_b = Path(args.first), Path(args.second)
+        for path in (path_a, path_b):
+            if not path.is_file():
+                print(f"ERROR: file not found: {path}", file=sys.stderr)
+                return 1
+        print(diff_files(path_a, path_b), end="")
+        return 0
+
+    schema_id, identity = args.first, args.second
+    directory = Path(args.dir) if args.dir else schemas_dir()
+    try:
+        schema_path = _find_schema_path(schema_id, directory)
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    data = load_schema_dict(schema_path)
+    schema = schema_from_dict(data, source_path=schema_path)
+    output_root = Path(args.output) if args.output else output_dir()
+    group_dir = resolve_output_dir(output_root, args.username, schema)
+
+    matches = find_recent_outputs(group_dir, schema.id, identity, doc_key=args.doc_key)
+    if len(matches) < 2:
+        print(
+            f"ERROR: found {len(matches)} saved output(s) for schema '{schema.id}', "
+            f"identity '{identity}', doc '{args.doc_key}'; need at least 2 to diff",
+            file=sys.stderr,
+        )
+        return 1
+
+    older, newer = matches
+    print(diff_files(older, newer), end="")
+    return 0
+
+
 def cmd_extract(args: argparse.Namespace) -> int:
     template_path = Path(args.template)
     variables = extract_variables_from_file(template_path)
@@ -718,6 +756,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_bulk.add_argument("--users-db", help="Path to users.db (default: users.db in the app root)")
     p_bulk.set_defaults(func=cmd_bulk)
+
+    p_diff = subparsers.add_parser("diff", help="Show a unified diff between two rendered configs")
+    p_diff.add_argument("first", help="First file to compare, or (with --last) a schema id")
+    p_diff.add_argument("second", help="Second file to compare, or (with --last) an identity value")
+    p_diff.add_argument(
+        "--last",
+        action="store_true",
+        help="Compare the two most recent saved outputs for a schema id + identity value, "
+        "instead of two explicit files",
+    )
+    p_diff.add_argument("--dir", help="Schemas directory, for --last (default: resources/schemas)")
+    p_diff.add_argument("--output", help="Output root directory, for --last (default: ./output)")
+    p_diff.add_argument(
+        "--username", default="unknown", help="Whose output tree to search, for --last"
+    )
+    p_diff.add_argument(
+        "--doc-key",
+        default="primary",
+        help="Document key to compare, for --last on a multi-document schema (default: primary)",
+    )
+    p_diff.set_defaults(func=cmd_diff)
 
     p_extract = subparsers.add_parser("extract", help="List a template's variables")
     p_extract.add_argument("template", help="Path to a Jinja2 template file")

@@ -25,6 +25,13 @@ def _slug(text: str) -> str:
     return slug or "x"
 
 
+def slugify(text: str) -> str:
+    """Public alias of the same slugging rule filenames are built with —
+    for anything (like differ.py's --last lookup) that needs to recognize
+    a filename this module already produced."""
+    return _slug(text)
+
+
 def _stamp(timestamp: datetime) -> str:
     return timestamp.strftime("%Y%m%d%H%M%S")
 
