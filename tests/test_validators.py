@@ -14,6 +14,16 @@ def _schema(*fields: Field) -> Schema:
     return Schema(name="Test", id="test", fields=list(fields), template="test.j2")
 
 
+class _FakeDatabase:
+    """Duck-types the one method validators.py calls on a Database."""
+
+    def __init__(self, tables: dict[str, list[str]]):
+        self._tables = tables
+
+    def all(self, query_name):
+        return self._tables[query_name]
+
+
 def test_coerce_string_never_returns_none():
     # Regression test for the carried-over bug: a missing `return value` made
     # every string field render as None.
@@ -63,6 +73,46 @@ def test_coerce_choice_restricts_to_options():
     assert coerce_field(field, "a") == "a"
     with pytest.raises(ValueError):
         coerce_field(field, "c")
+
+
+def test_coerce_choice_from_db_passes_through_without_a_database():
+    # §5.3: form-only paths still work even when there's no db configured.
+    field = Field(key="region", label="Region", type="choice", from_db={"query": "regions"})
+    assert coerce_field(field, "us-east") == "us-east"
+
+
+def test_coerce_choice_from_db_validates_membership_when_database_given():
+    field = Field(key="region", label="Region", type="choice", from_db={"query": "regions"})
+    database = _FakeDatabase({"regions": ["us-east", "us-west"]})
+    assert coerce_field(field, "us-east", database=database) == "us-east"
+    with pytest.raises(ValueError):
+        coerce_field(field, "mars-colony", database=database)
+
+
+def test_coerce_lookup_from_db_accepts_any_text_even_with_database():
+    # lookup's from_db is autocomplete only, never a restriction.
+    field = Field(
+        key="device_name", label="Device", type="lookup", from_db={"query": "device_names"}
+    )
+    database = _FakeDatabase({"device_names": ["edge-01"]})
+    assert coerce_field(field, "brand-new-device", database=database) == "brand-new-device"
+
+
+def test_validate_values_passes_database_through_to_from_db_fields():
+    schema = _schema(
+        Field(
+            key="region",
+            label="Region",
+            type="choice",
+            from_db={"query": "regions"},
+            required=True,
+        )
+    )
+    database = _FakeDatabase({"regions": ["us-east"]})
+    result = validate_values(schema, {"region": "us-east"}, database=database)
+    assert result["region"] == "us-east"
+    with pytest.raises(FieldValidationError):
+        validate_values(schema, {"region": "nowhere"}, database=database)
 
 
 def test_coerce_ip_and_network_types():

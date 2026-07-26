@@ -128,6 +128,13 @@ def project_dirs_for(schema_path: str | Path) -> tuple[Path, Path]:
     return root / "templates", root / "prepare"
 
 
+def project_data_dir_for(schema_path: str | Path) -> Path:
+    """The sibling `<root>/data/` folder holding queries.yaml and the .db
+    file, for schemas that use `from_db`."""
+    root = Path(schema_path).resolve().parent.parent
+    return root / "data"
+
+
 def find_schema_files(schemas_dir: str | Path) -> list[Path]:
     schemas_dir = Path(schemas_dir)
     if not schemas_dir.is_dir():

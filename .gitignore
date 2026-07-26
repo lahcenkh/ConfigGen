@@ -22,10 +22,13 @@ resources/templates/*
 resources/data/*
 !resources/data/README.txt
 
-# Databases
+# Databases (examples/ ships its own sample.db on purpose - see below)
 *.db
 *.sqlite
 *.sqlite3
+!examples/**/*.db
+!examples/**/*.sqlite
+!examples/**/*.sqlite3
 
 # User-facing generated output
 output/

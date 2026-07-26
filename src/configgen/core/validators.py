@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 
+from configgen.core.db import Database
 from configgen.core.schema import Field, Schema
 from configgen.core.values import CIDRValue, IPCIDRValue, IPValue, NetworkValue
 
@@ -33,14 +34,14 @@ def _condition_met(condition: dict | None, values: dict) -> bool:
     return all(str(values.get(k)) == str(v) for k, v in condition.items())
 
 
-def _coerce_string(field: Field, raw: str) -> str:
+def _coerce_string(field: Field, raw: str, database: Database | None = None) -> str:
     value = str(raw)
     if field.pattern and not re.fullmatch(field.pattern, value):
         raise ValueError(f"'{value}' does not match the expected pattern")
     return value  # a missing return here is the bug this codebase already paid for once
 
 
-def _coerce_int(field: Field, raw) -> int:
+def _coerce_int(field: Field, raw, database: Database | None = None) -> int:
     try:
         value = int(str(raw).strip())
     except ValueError:
@@ -52,7 +53,7 @@ def _coerce_int(field: Field, raw) -> int:
     return value
 
 
-def _coerce_bool(field: Field, raw) -> bool:
+def _coerce_bool(field: Field, raw, database: Database | None = None) -> bool:
     if isinstance(raw, bool):
         return raw
     text = str(raw).strip().lower()
@@ -63,10 +64,20 @@ def _coerce_bool(field: Field, raw) -> bool:
     raise ValueError(f"'{raw}' is not a valid yes/no value")
 
 
-def _coerce_choice(field: Field, raw) -> str:
+def _coerce_choice(field: Field, raw, database: Database | None = None) -> str:
     value = str(raw)
-    if field.options and value not in field.options:
-        raise ValueError(f"'{value}' is not one of: {', '.join(field.options)}")
+    if field.options:
+        if value not in field.options:
+            raise ValueError(f"'{value}' is not one of: {', '.join(field.options)}")
+        return value
+    # A `lookup` field's from_db is autocomplete only (any text is accepted);
+    # a `choice` field's from_db is a closed set, checked only when a
+    # Database is available — with none configured, we can't verify it, so
+    # the value passes through (§5.3: form-only paths still work).
+    if field.from_db and database is not None:
+        options = database.all(field.from_db["query"])
+        if value not in options:
+            raise ValueError(f"'{value}' is not one of the values from '{field.from_db['query']}'")
     return value
 
 
@@ -78,23 +89,25 @@ _COERCERS = {
     "int": _coerce_int,
     "bool": _coerce_bool,
     "choice": _coerce_choice,
-    "ip": lambda field, raw: IPValue(raw),
-    "ip_cidr": lambda field, raw: IPCIDRValue(raw),
-    "network": lambda field, raw: NetworkValue(raw),
-    "cidr": lambda field, raw: CIDRValue(raw),
+    "ip": lambda field, raw, database=None: IPValue(raw),
+    "ip_cidr": lambda field, raw, database=None: IPCIDRValue(raw),
+    "network": lambda field, raw, database=None: NetworkValue(raw),
+    "cidr": lambda field, raw, database=None: CIDRValue(raw),
 }
 
 
-def coerce_field(field: Field, raw) -> object:
+def coerce_field(field: Field, raw, database: Database | None = None) -> object:
     coercer = _COERCERS[field.type]
-    return coercer(field, raw)
+    return coercer(field, raw, database=database)
 
 
-def validate_values(schema: Schema, raw_values: dict) -> dict:
+def validate_values(schema: Schema, raw_values: dict, *, database: Database | None = None) -> dict:
     """Returns a dict of typed values, keyed by field key.
 
     Fields hidden by `visible_if` are omitted from the result entirely (they
-    are not part of this submission, not merely blank).
+    are not part of this submission, not merely blank). `database`, if
+    given, resolves `from_db` choice fields against the live query results;
+    without one, those fields are accepted unchecked.
     """
     errors: dict[str, str] = {}
     result: dict[str, object] = {}
@@ -114,7 +127,7 @@ def validate_values(schema: Schema, raw_values: dict) -> dict:
             continue
 
         try:
-            result[f.key] = coerce_field(f, raw)
+            result[f.key] = coerce_field(f, raw, database=database)
         except ValueError as exc:
             message = str(exc)
             if f.example:

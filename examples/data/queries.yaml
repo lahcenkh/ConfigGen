@@ -1,0 +1,17 @@
+# Example project db config (§5.1). In a real project this file — and the
+# database it points at — are user-supplied and not committed; this one
+# ships only so the device_onboarding example can render headless.
+database: sample.db
+queries:
+  regions:
+    sql: "SELECT DISTINCT region FROM sites ORDER BY region"
+    returns: scalar_list
+  device_names:
+    sql: "SELECT name FROM devices ORDER BY name"
+    returns: scalar_list
+  device:
+    sql: "SELECT * FROM devices WHERE name = :name"
+    returns: row
+  devices_by_site:
+    sql: "SELECT * FROM devices WHERE site = :site"
+    returns: rows

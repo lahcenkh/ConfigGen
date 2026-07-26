@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 
 from configgen.appinfo import APP_NAME, __version__
+from configgen.core.db import Database, DatabaseError, health_check, load_queries
 from configgen.core.exporter import save_documents
 from configgen.core.extractor import (
     classify_variables,
@@ -22,18 +23,48 @@ from configgen.core.schema import (
     Schema,
     find_schema_files,
     load_schema_dict,
+    project_data_dir_for,
     project_dirs_for,
     schema_from_dict,
 )
 from configgen.core.schema_validator import SchemaValidationError, validate_schema
 from configgen.core.validators import FieldValidationError, validate_values
-from configgen.paths import output_dir, schemas_dir
+from configgen.paths import data_dir, output_dir, schemas_dir
+
+
+def _known_queries_for(schema_path: Path) -> set[str] | None:
+    """None if queries.yaml doesn't exist (skip the from_db check — can't
+    verify what we can't see); a set of names if it does."""
+    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
+    if not queries_path.is_file():
+        return None
+    _, queries = load_queries(queries_path)
+    return set(queries)
+
+
+def _database_for(schema: Schema, schema_path: Path) -> Database | None:
+    """None if the schema has no from_db fields; raises DatabaseError with a
+    clean message (§5.3) if it does but queries.yaml isn't there."""
+    if not any(f.from_db for f in schema.fields):
+        return None
+    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
+    if not queries_path.is_file():
+        raise DatabaseError(
+            f"schema '{schema.id}' has fields sourced from a database, "
+            f"but no queries.yaml found at {queries_path}"
+        )
+    return Database.from_queries_file(queries_path)
 
 
 def _validate_file(schema_path: Path) -> None:
     data = load_schema_dict(schema_path)
     templates_dir, prepare_dir = project_dirs_for(schema_path)
-    validate_schema(data, templates_dir=templates_dir, prepare_dir=prepare_dir)
+    validate_schema(
+        data,
+        templates_dir=templates_dir,
+        prepare_dir=prepare_dir,
+        known_queries=_known_queries_for(schema_path),
+    )
 
 
 def _mismatch_warnings(schema: Schema, templates_dir: Path) -> list[str]:
@@ -113,7 +144,12 @@ def cmd_generate(args: argparse.Namespace) -> int:
     data = load_schema_dict(schema_path)
     templates_dir, prepare_dir = project_dirs_for(schema_path)
     try:
-        validate_schema(data, templates_dir=templates_dir, prepare_dir=prepare_dir)
+        validate_schema(
+            data,
+            templates_dir=templates_dir,
+            prepare_dir=prepare_dir,
+            known_queries=_known_queries_for(schema_path),
+        )
     except SchemaValidationError as exc:
         print(f"FAILED: {schema_path}", file=sys.stderr)
         for issue in exc.issues:
@@ -129,13 +165,22 @@ def cmd_generate(args: argparse.Namespace) -> int:
         )
         return 1
 
+    try:
+        database = _database_for(schema, schema_path)
+    except DatabaseError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
     raw_values = json.loads(Path(args.values).read_text(encoding="utf-8"))
     try:
-        context = validate_values(schema, raw_values)
+        context = validate_values(schema, raw_values, database=database)
     except FieldValidationError as exc:
         print("FAILED validation:", file=sys.stderr)
         for key, message in exc.errors.items():
             print(f"  - {key}: {message}", file=sys.stderr)
+        return 1
+    except DatabaseError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
     try:
@@ -186,6 +231,29 @@ def cmd_extract(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_db_check(args: argparse.Namespace) -> int:
+    queries_path = Path(args.queries) if args.queries else (data_dir() / "queries.yaml")
+    if not queries_path.is_file():
+        print(f"ERROR: queries.yaml not found at {queries_path}", file=sys.stderr)
+        return 1
+
+    database = Database.from_queries_file(queries_path)
+    exit_code = 0
+    for result in health_check(database):
+        status = "OK" if result.ok else "FAIL"
+        line = f"{result.name}: {status}"
+        if not result.ok:
+            line += f" ({result.message})"
+            exit_code = 1
+        print(line)
+    return exit_code
+
+
+def _print_help(parser: argparse.ArgumentParser) -> int:
+    parser.print_help()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="configgen", description=f"{APP_NAME} CLI")
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
@@ -214,6 +282,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_extract.add_argument("--check", help="Report mismatches against this schema YAML")
     p_extract.set_defaults(func=cmd_extract)
+
+    p_db = subparsers.add_parser("db", help="Database utilities")
+    p_db.set_defaults(func=lambda a, _p=p_db: _print_help(_p))
+    db_subparsers = p_db.add_subparsers(dest="db_command")
+    p_db_check = db_subparsers.add_parser(
+        "check", help="Run every named query in queries.yaml with null parameters"
+    )
+    p_db_check.add_argument(
+        "--queries", help="Path to queries.yaml (default: resources/data/queries.yaml)"
+    )
+    p_db_check.set_defaults(func=cmd_db_check)
 
     return parser
 
