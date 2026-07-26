@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Private, user-supplied content — never commit real configs or data
+resources/schemas/*
+!resources/schemas/.gitkeep
+resources/templates/*
+!resources/templates/.gitkeep
+resources/data/*
+!resources/data/README.txt
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# User-facing generated output
+output/
+
+# Auth store
+users.db
+
+# Editors / OS
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Packaging artifacts
+*.spec.bak
+packaging/*.exe
