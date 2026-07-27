@@ -120,6 +120,13 @@ def load_schema(path: str | Path) -> Schema:
     return schema_from_dict(data, source_path=path)
 
 
+def project_root_for(schema_path: str | Path) -> Path:
+    """The project root a schema lives under — `resources/` or a
+    self-contained `examples/` set — the common ancestor every other
+    `project_*_for` helper resolves its sibling folder from."""
+    return Path(schema_path).resolve().parent.parent
+
+
 def project_dirs_for(schema_path: str | Path) -> tuple[Path, Path]:
     """A schema at `<root>/schemas/foo.yaml` keeps its templates and prepare
     hooks in sibling `<root>/templates/` and `<root>/prepare/` folders —

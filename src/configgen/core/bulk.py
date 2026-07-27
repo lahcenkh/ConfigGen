@@ -95,6 +95,7 @@ def run_bulk(
     database: Database | None = None,
     services: Services | None = None,
     preflight_dir: Path | str | None = None,
+    filters: dict | None = None,
     variant: str | None = None,
     timestamp: datetime | None = None,
 ) -> BulkResult:
@@ -135,7 +136,12 @@ def run_bulk(
     for row_number, raw_row, context in ready:
         try:
             rendered = render_documents(
-                schema, context, templates_dir=templates_dir, username=username, timestamp=timestamp
+                schema,
+                context,
+                templates_dir=templates_dir,
+                username=username,
+                timestamp=timestamp,
+                filters=filters,
             )
         except RenderError as exc:
             row_errors.append(RowError(row_number=row_number, errors={"_render": str(exc)}))

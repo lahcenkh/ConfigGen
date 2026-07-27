@@ -31,6 +31,12 @@ from configgen.core.extractor import (
     scaffold_schema,
 )
 from configgen.core.preflight import run_preflight
+from configgen.core.registry import (
+    build_registry,
+    check_references,
+    find_orphaned_plugins,
+    load_project_filters,
+)
 from configgen.core.renderer import RenderError, render_documents
 from configgen.core.schema import (
     Schema,
@@ -40,6 +46,7 @@ from configgen.core.schema import (
     project_dirs_for,
     project_history_dir_for,
     project_preflight_dir_for,
+    project_root_for,
     schema_from_dict,
 )
 from configgen.core.schema_validator import SchemaValidationError, validate_schema
@@ -305,7 +312,11 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
     try:
         rendered = render_documents(
-            schema, context, templates_dir=templates_dir, username=effective_username
+            schema,
+            context,
+            templates_dir=templates_dir,
+            username=effective_username,
+            filters=load_project_filters(project_root_for(schema_path)),
         )
     except RenderError as exc:
         print(f"FAILED to render: {exc}", file=sys.stderr)
@@ -433,6 +444,7 @@ def cmd_bulk(args: argparse.Namespace) -> int:
         database=database,
         services=_services_for(schema_path),
         preflight_dir=project_preflight_dir_for(schema_path),
+        filters=load_project_filters(project_root_for(schema_path)),
     )
 
     print(f"{result.valid_count} valid, {result.error_count} errors")
@@ -574,6 +586,35 @@ def cmd_history(args: argparse.Namespace) -> int:
     for entry in entries:
         suffix = f" - {entry.note}" if entry.note else ""
         print(f"v{entry.version}  {entry.timestamp}  {entry.author}{suffix}")
+    return 0
+
+
+def cmd_plugins(args: argparse.Namespace) -> int:
+    directory = Path(args.dir) if args.dir else schemas_dir()
+    project_root = directory.parent
+    registry = build_registry(project_root)
+
+    if args.check:
+        issues = check_references(registry, directory)
+        if not issues:
+            print("All schema references resolve.")
+            return 0
+        for issue in issues:
+            print(
+                f"ERROR: schema '{issue.schema_id}' {issue.field}: {issue.message}",
+                file=sys.stderr,
+            )
+        return 1
+
+    for plugin in registry.plugins():
+        print(f"{plugin.kind:<10} {plugin.name:<25} {plugin.source}")
+
+    orphans = find_orphaned_plugins(registry, directory, project_root / "templates")
+    for orphan in orphans:
+        print(
+            f"WARNING: orphaned {orphan.kind} '{orphan.name}' ({orphan.source}) "
+            "- nothing references it"
+        )
     return 0
 
 
@@ -891,6 +932,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_history.add_argument("--author", help="Author recorded for --save/--restore")
     p_history.add_argument("--note", help="Note recorded for --save/--restore")
     p_history.set_defaults(func=cmd_history)
+
+    p_plugins = subparsers.add_parser(
+        "plugins", help="List discovered hooks/filters/preflight checks"
+    )
+    p_plugins.add_argument("--dir", help="Schemas directory (default: resources/schemas)")
+    p_plugins.add_argument(
+        "--check", action="store_true", help="Validate every schema's prepare:/preflight: resolves"
+    )
+    p_plugins.set_defaults(func=cmd_plugins)
 
     p_extract = subparsers.add_parser("extract", help="List a template's variables")
     p_extract.add_argument("template", help="Path to a Jinja2 template file")
