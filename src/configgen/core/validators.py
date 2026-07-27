@@ -28,7 +28,11 @@ class FieldValidationError(Exception):
         super().__init__("; ".join(f"{k}: {v}" for k, v in errors.items()))
 
 
-def _condition_met(condition: dict | None, values: dict) -> bool:
+def condition_met(condition: dict | None, values: dict) -> bool:
+    """Whether a `visible_if`/`required_if`/`clear_when` condition (§2.3)
+    holds against the current raw values. Public so the GUI form builder
+    can drive the same show/hide/require reactivity live, without a second
+    implementation of what "the condition holds" means."""
     if not condition:
         return True
     return all(str(values.get(k)) == str(v) for k, v in condition.items())
@@ -113,10 +117,10 @@ def validate_values(schema: Schema, raw_values: dict, *, database: Database | No
     result: dict[str, object] = {}
 
     for f in schema.fields:
-        if not _condition_met(f.visible_if, raw_values):
+        if not condition_met(f.visible_if, raw_values):
             continue
 
-        required = f.required or (bool(f.required_if) and _condition_met(f.required_if, raw_values))
+        required = f.required or (bool(f.required_if) and condition_met(f.required_if, raw_values))
         raw = raw_values.get(f.key, f.default)
 
         if raw is None or raw == "":

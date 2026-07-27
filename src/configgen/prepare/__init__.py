@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from configgen.core.db import Database, NoDatabase
+from configgen.core.schema import project_data_dir_for
 from configgen.core.values import NetworkValue
 
 
@@ -67,6 +68,17 @@ class Services:
         self.net = NetService()
         for key, value in extra.items():
             setattr(self, key, value)
+
+
+def services_for_schema(schema_path: str | Path) -> Services:
+    """Builds the Services a prepare hook runs with, given only a schema's
+    path: `db` is a real Database if the project has a queries.yaml, else
+    Services falls back to NoDatabase (clean error only if the hook
+    actually touches `services.db`). Shared by the CLI and the GUI
+    generator view, so both build a hook's Services the same way."""
+    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
+    db = Database.from_queries_file(queries_path) if queries_path.is_file() else None
+    return Services(db=db)
 
 
 def load_hook(prepare_dir: str | Path, name: str) -> Callable[[dict, dict, Services], dict]:

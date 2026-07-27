@@ -22,7 +22,13 @@ from configgen.core.auth import (
     visible_schemas,
 )
 from configgen.core.bulk import read_rows, run_bulk
-from configgen.core.db import Database, DatabaseError, health_check, load_queries
+from configgen.core.db import (
+    Database,
+    DatabaseError,
+    database_for_schema,
+    health_check,
+    known_queries_for_schema,
+)
 from configgen.core.differ import diff_files, find_recent_outputs
 from configgen.core.exporter import resolve_output_dir, save_documents
 from configgen.core.extractor import (
@@ -59,7 +65,7 @@ from configgen.core.versioning import (
     save_version,
 )
 from configgen.paths import data_dir, output_dir, schemas_dir, users_db_path
-from configgen.prepare import PrepareError, Services, run_prepare_hook
+from configgen.prepare import PrepareError, run_prepare_hook, services_for_schema
 
 
 def _auth_store_for(args: argparse.Namespace) -> AuthStore:
@@ -95,40 +101,6 @@ def _authenticate_actor(args: argparse.Namespace, store: AuthStore) -> User:
     )
 
 
-def _known_queries_for(schema_path: Path) -> set[str] | None:
-    """None if queries.yaml doesn't exist (skip the from_db check — can't
-    verify what we can't see); a set of names if it does."""
-    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
-    if not queries_path.is_file():
-        return None
-    _, queries = load_queries(queries_path)
-    return set(queries)
-
-
-def _database_for(schema: Schema, schema_path: Path) -> Database | None:
-    """None if the schema has no from_db fields; raises DatabaseError with a
-    clean message (§5.3) if it does but queries.yaml isn't there."""
-    if not any(f.from_db for f in schema.fields):
-        return None
-    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
-    if not queries_path.is_file():
-        raise DatabaseError(
-            f"schema '{schema.id}' has fields sourced from a database, "
-            f"but no queries.yaml found at {queries_path}"
-        )
-    return Database.from_queries_file(queries_path)
-
-
-def _services_for(schema_path: Path) -> Services:
-    """Builds the Services a prepare hook runs with. `db` is a real Database
-    if the project has a queries.yaml, else Services falls back to a
-    NoDatabase that raises cleanly only if the hook actually tries to use
-    it — a hook that doesn't touch `services.db` works with no db at all."""
-    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
-    db = Database.from_queries_file(queries_path) if queries_path.is_file() else None
-    return Services(db=db)
-
-
 def _validate_file(schema_path: Path) -> None:
     data = load_schema_dict(schema_path)
     templates_dir, prepare_dir = project_dirs_for(schema_path)
@@ -136,7 +108,7 @@ def _validate_file(schema_path: Path) -> None:
         data,
         templates_dir=templates_dir,
         prepare_dir=prepare_dir,
-        known_queries=_known_queries_for(schema_path),
+        known_queries=known_queries_for_schema(schema_path),
     )
 
 
@@ -239,7 +211,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
             data,
             templates_dir=templates_dir,
             prepare_dir=prepare_dir,
-            known_queries=_known_queries_for(schema_path),
+            known_queries=known_queries_for_schema(schema_path),
         )
     except SchemaValidationError as exc:
         print(f"FAILED: {schema_path}", file=sys.stderr)
@@ -272,7 +244,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     effective_username = user.username if user else args.username
 
     try:
-        database = _database_for(schema, schema_path)
+        database = database_for_schema(schema, schema_path)
     except DatabaseError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -297,7 +269,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         }
         try:
             context = run_prepare_hook(
-                prepare_dir, schema.prepare, values, hook_context, _services_for(schema_path)
+                prepare_dir, schema.prepare, values, hook_context, services_for_schema(schema_path)
             )
         except PrepareError as exc:
             print("FAILED prepare hook:", file=sys.stderr)
@@ -366,7 +338,7 @@ def cmd_bulk(args: argparse.Namespace) -> int:
             data,
             templates_dir=templates_dir,
             prepare_dir=prepare_dir,
-            known_queries=_known_queries_for(schema_path),
+            known_queries=known_queries_for_schema(schema_path),
         )
     except SchemaValidationError as exc:
         print(f"FAILED: {schema_path}", file=sys.stderr)
@@ -424,7 +396,7 @@ def cmd_bulk(args: argparse.Namespace) -> int:
             return 1
         source = str(Path(args.input).resolve())
         try:
-            database = _database_for(schema, schema_path)
+            database = database_for_schema(schema, schema_path)
         except DatabaseError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
@@ -442,7 +414,7 @@ def cmd_bulk(args: argparse.Namespace) -> int:
         source=source,
         username=effective_username,
         database=database,
-        services=_services_for(schema_path),
+        services=services_for_schema(schema_path),
         preflight_dir=project_preflight_dir_for(schema_path),
         filters=load_project_filters(project_root_for(schema_path)),
     )

@@ -19,6 +19,8 @@ from pathlib import Path
 
 import yaml
 
+from configgen.core.schema import Schema, project_data_dir_for
+
 _PARAM_RE = re.compile(r":(\w+)")
 
 
@@ -137,3 +139,31 @@ def health_check(database: Database) -> list[HealthCheckResult]:
         except DatabaseError as exc:
             results.append(HealthCheckResult(name=query_name, ok=False, message=str(exc)))
     return results
+
+
+def known_queries_for_schema(schema_path: str | Path) -> set[str] | None:
+    """The query names a project's queries.yaml declares — None if it
+    doesn't exist (can't verify a from_db reference against a file that
+    isn't there, so schema_validator skips that check rather than failing
+    it). Shared by the CLI's schema validation and the GUI template editor."""
+    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
+    if not queries_path.is_file():
+        return None
+    _, queries = load_queries(queries_path)
+    return set(queries)
+
+
+def database_for_schema(schema: Schema, schema_path: str | Path) -> Database | None:
+    """None if the schema has no from_db fields; raises DatabaseError with a
+    clean message (§5.3) if it does but queries.yaml isn't there. Shared by
+    the CLI (generate/bulk) and the GUI generator view, so both resolve a
+    schema's database the same way."""
+    if not any(f.from_db for f in schema.fields):
+        return None
+    queries_path = project_data_dir_for(schema_path) / "queries.yaml"
+    if not queries_path.is_file():
+        raise DatabaseError(
+            f"schema '{schema.id}' has fields sourced from a database, "
+            f"but no queries.yaml found at {queries_path}"
+        )
+    return Database.from_queries_file(queries_path)
