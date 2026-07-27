@@ -1,7 +1,7 @@
 import time
 from pathlib import Path
 
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialog, QFileDialog
 
 from configgen.core.auth import AuthStore
@@ -60,7 +60,7 @@ def _isolated_window(tmp_path: Path, monkeypatch, role="admin", username="admin"
     if username != "admin":
         store.create_user(username, "hunter22pw", role)
     user = store.get_user(username)
-    window = MainWindow(user, store, project / "schemas")
+    window = MainWindow(user, store, project / "schemas", check_for_updates=False)
     return window, store, project
 
 
@@ -246,7 +246,7 @@ def test_dark_mode_toggle_persists_and_restyles(qtbot, tmp_path: Path, monkeypat
     assert "background-color: #1a1d21" in window.styleSheet()
 
     # A fresh window for the same user picks up the persisted preference.
-    window2 = MainWindow(window.user, window.store, window.schemas_dir)
+    window2 = MainWindow(window.user, window.store, window.schemas_dir, check_for_updates=False)
     qtbot.addWidget(window2)
     assert window2.dark is True
 
@@ -373,3 +373,65 @@ def test_open_import_config_pack_refreshes_dashboard_with_new_schema(
 
     assert len(window.schemas) == 3
     assert window.stack.currentWidget() is window.dashboard
+
+
+# -- update check (§16) ---------------------------------------------------------
+
+
+def test_update_check_disabled_by_default_starts_no_worker(qtbot, tmp_path: Path, monkeypatch):
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    assert window.update_worker is None
+
+
+def test_update_check_enabled_starts_a_worker_and_shows_the_banner(
+    qtbot, tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("configgen.paths.app_root", lambda: tmp_path)
+    project = _make_project(tmp_path)
+    store = AuthStore(tmp_path / "users.db")
+    user = store.get_user("admin")
+    monkeypatch.setattr(
+        "configgen.ui.main_window.UpdateCheckWorker.run",
+        lambda self: self.updateAvailable.emit("v9.9.9"),
+    )
+
+    window = MainWindow(user, store, project / "schemas", check_for_updates=True)
+    qtbot.addWidget(window)
+    window.update_worker.wait(2000)
+    qtbot.waitUntil(lambda: window.update_banner.isHidden() is False, timeout=2000)
+
+    assert "v9.9.9" in window.update_banner.label.text()
+
+
+def test_update_check_toggle_persists_the_setting(qtbot, tmp_path: Path, monkeypatch):
+    from configgen.ui.settings import auto_update_check_enabled
+
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    assert auto_update_check_enabled() is True
+
+    toggle = next(a for a in window.findChildren(QAction) if a.text() == "Check for Updates")
+    toggle.setChecked(False)
+
+    assert auto_update_check_enabled() is False
+
+
+def test_close_event_waits_for_running_update_worker(qtbot, tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("configgen.paths.app_root", lambda: tmp_path)
+    project = _make_project(tmp_path)
+    store = AuthStore(tmp_path / "users.db")
+    user = store.get_user("admin")
+
+    def slow_run(self):
+        import time
+
+        time.sleep(0.2)
+        self.updateAvailable.emit("v9.9.9")
+
+    monkeypatch.setattr("configgen.ui.main_window.UpdateCheckWorker.run", slow_run)
+
+    window = MainWindow(user, store, project / "schemas", check_for_updates=True)
+    qtbot.addWidget(window)
+    window.close()  # must not raise / warn about a thread destroyed mid-run
+    assert window.update_worker.isFinished()

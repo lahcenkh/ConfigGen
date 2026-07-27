@@ -57,7 +57,9 @@ from configgen.ui.dashboard import Dashboard
 from configgen.ui.form_builder import FormBuilder
 from configgen.ui.generation_log import GenerationLogDialog
 from configgen.ui.highlighters import ConfigHighlighter
+from configgen.ui.settings import auto_update_check_enabled, set_auto_update_check_enabled
 from configgen.ui.template_editor import TemplateEditorWindow
+from configgen.ui.update_notice import UpdateBanner, UpdateCheckWorker
 from configgen.ui.user_admin import UserAdminWindow
 
 
@@ -150,6 +152,8 @@ class MainWindow(QMainWindow):
         store: AuthStore,
         schemas_dir: str | Path,
         parent: QWidget | None = None,
+        *,
+        check_for_updates: bool = True,
     ):
         super().__init__(parent)
         self.user = user
@@ -158,6 +162,7 @@ class MainWindow(QMainWindow):
         self.dark = theme.load_dark_mode(user.username)
         self.palette = theme.palette_for(self.dark)
         self.generator_view: GeneratorView | None = None
+        self.update_worker: UpdateCheckWorker | None = None
 
         self.setWindowTitle(f"{APP_NAME} v{__version__} — {user.username}")
         self.resize(1150, 780)
@@ -165,8 +170,17 @@ class MainWindow(QMainWindow):
         self.user_groups = store.groups_for_user(user.username)
         self.schemas = self._load_schemas()
 
+        central = QWidget()
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+
+        self.update_banner = UpdateBanner(self.palette)
+        central_layout.addWidget(self.update_banner)
+
         self.stack = QStackedWidget()
-        self.setCentralWidget(self.stack)
+        central_layout.addWidget(self.stack, stretch=1)
+        self.setCentralWidget(central)
 
         self.dashboard = self._build_dashboard()
         self.stack.addWidget(self.dashboard)
@@ -174,6 +188,9 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_shortcuts()
         self._apply_theme()
+
+        if check_for_updates and auto_update_check_enabled():
+            self._start_update_check()
 
     # -- setup ---------------------------------------------------------
 
@@ -224,6 +241,12 @@ class MainWindow(QMainWindow):
         about_action = QAction("About", self)
         about_action.triggered.connect(self._open_about)
         toolbar.addAction(about_action)
+
+        update_action = QAction("Check for Updates", self)
+        update_action.setCheckable(True)
+        update_action.setChecked(auto_update_check_enabled())
+        update_action.toggled.connect(set_auto_update_check_enabled)
+        toolbar.addAction(update_action)
 
     def _build_shortcuts(self) -> None:
         def bind(sequence: str, handler) -> None:
@@ -298,6 +321,16 @@ class MainWindow(QMainWindow):
         dialog = ImportConfigPackDialog(self.schemas_dir.parent, self)
         dialog.exec()
         self._refresh_dashboard()
+
+    def _start_update_check(self) -> None:
+        self.update_worker = UpdateCheckWorker(parent=self)
+        self.update_worker.updateAvailable.connect(self.update_banner.show_update)
+        self.update_worker.start()
+
+    def closeEvent(self, event) -> None:
+        if self.update_worker is not None and self.update_worker.isRunning():
+            self.update_worker.wait(2000)
+        super().closeEvent(event)
 
     def _schema_path_for(self, schema_id: str) -> Path | None:
         for path in find_schema_files(self.schemas_dir):
