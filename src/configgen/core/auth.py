@@ -177,7 +177,8 @@ class AuthStore:
                 );
                 CREATE TABLE IF NOT EXISTS generation_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    user_id INTEGER NOT NULL,
+                    username TEXT NOT NULL,
                     group_name TEXT,
                     schema_id TEXT NOT NULL,
                     schema_version INTEGER NOT NULL,
@@ -354,6 +355,40 @@ class AuthStore:
         finally:
             conn.close()
 
+    def set_role(self, username: str, role: str) -> None:
+        if role not in ROLES:
+            raise AuthError(f"unknown role '{role}'")
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                "UPDATE users SET role = ?, updated_at = ? WHERE username = ?",
+                (role, _now().isoformat(), username),
+            )
+            if cursor.rowcount == 0:
+                raise AuthError(f"no such user '{username}'")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def delete_user(self, username: str) -> None:
+        """Generation log entries reference a user_id, not a live User row,
+        by design (§13.7 records who/what, not a foreign key an admin
+        deleting an old account could break) — but sqlite3 doesn't know
+        that from the schema alone, so this only removes the user's own
+        auth/group/key rows, never generation_log."""
+        conn = self._connect()
+        try:
+            row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            if row is None:
+                raise AuthError(f"no such user '{username}'")
+            user_id = row["id"]
+            conn.execute("DELETE FROM group_members WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM api_keys WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
     # -- groups ----------------------------------------------------------
 
     def create_group(self, name: str, description: str | None = None) -> Group:
@@ -403,6 +438,46 @@ class AuthStore:
             conn.commit()
         finally:
             conn.close()
+
+    def remove_user_from_group(self, username: str, group_name: str) -> None:
+        user = self.get_user(username)
+        if user is None:
+            raise AuthError(f"no such user '{username}'")
+        conn = self._connect()
+        try:
+            group_row = conn.execute(
+                "SELECT id FROM groups WHERE name = ?", (group_name,)
+            ).fetchone()
+            if group_row is None:
+                raise AuthError(f"no such group '{group_name}'")
+            conn.execute(
+                "DELETE FROM group_members WHERE user_id = ? AND group_id = ?",
+                (user.id, group_row["id"]),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def members_of_group(self, group_name: str) -> list[User]:
+        conn = self._connect()
+        try:
+            group_row = conn.execute(
+                "SELECT id FROM groups WHERE name = ?", (group_name,)
+            ).fetchone()
+            if group_row is None:
+                raise AuthError(f"no such group '{group_name}'")
+            rows = conn.execute(
+                """
+                SELECT u.* FROM users u
+                JOIN group_members gm ON gm.user_id = u.id
+                WHERE gm.group_id = ?
+                ORDER BY u.username
+                """,
+                (group_row["id"],),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [_row_to_user(row) for row in rows]
 
     def groups_for_user(self, username: str) -> set[str]:
         user = self.get_user(username)
@@ -503,12 +578,13 @@ class AuthStore:
             conn.execute(
                 """
                 INSERT INTO generation_log (
-                    user_id, group_name, schema_id, schema_version, form_inputs,
+                    user_id, username, group_name, schema_id, schema_version, form_inputs,
                     output_filename, bulk_batch_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user.id,
+                    user.username,
                     group_name,
                     schema_id,
                     schema_version,
@@ -525,35 +601,32 @@ class AuthStore:
     def list_generation_log(self, user: User) -> list[dict]:
         """Applies §13.7's viewing rule: Config Engineers see their own
         entries only; Template Engineers see their own plus their groups';
-        Admins see everything."""
+        Admins see everything.
+
+        Reads `username` straight off generation_log (a snapshot taken at
+        record_generation time), not a join to `users` — the log must
+        survive a since-deleted user's account (the same "record the ID,
+        not a live reference" principle §13.3 already applies to deleted
+        schemas), and user_id has no foreign key for exactly that reason.
+        """
         conn = self._connect()
         try:
             if user.is_admin:
-                rows = conn.execute("""
-                    SELECT gl.*, u.username FROM generation_log gl
-                    JOIN users u ON u.id = gl.user_id
-                    ORDER BY gl.id DESC
-                    """).fetchall()
+                rows = conn.execute("SELECT * FROM generation_log ORDER BY id DESC").fetchall()
             elif user.role == ROLE_TEMPLATE_ENGINEER:
                 group_names = self.groups_for_user(user.username)
                 placeholders = ",".join("?" * len(group_names)) if group_names else "NULL"
                 rows = conn.execute(
                     f"""
-                    SELECT gl.*, u.username FROM generation_log gl
-                    JOIN users u ON u.id = gl.user_id
-                    WHERE gl.user_id = ? OR gl.group_name IN ({placeholders})
-                    ORDER BY gl.id DESC
+                    SELECT * FROM generation_log
+                    WHERE user_id = ? OR group_name IN ({placeholders})
+                    ORDER BY id DESC
                     """,
                     (user.id, *group_names),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    """
-                    SELECT gl.*, u.username FROM generation_log gl
-                    JOIN users u ON u.id = gl.user_id
-                    WHERE gl.user_id = ?
-                    ORDER BY gl.id DESC
-                    """,
+                    "SELECT * FROM generation_log WHERE user_id = ? ORDER BY id DESC",
                     (user.id,),
                 ).fetchall()
         finally:

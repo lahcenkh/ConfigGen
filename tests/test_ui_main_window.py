@@ -1,7 +1,8 @@
 import time
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QDialog, QFileDialog
 
 from configgen.core.auth import AuthStore
 from configgen.ui.main_window import MainWindow
@@ -248,3 +249,104 @@ def test_dark_mode_toggle_persists_and_restyles(qtbot, tmp_path: Path, monkeypat
     window2 = MainWindow(window.user, window.store, window.schemas_dir)
     qtbot.addWidget(window2)
     assert window2.dark is True
+
+
+# -- Phase 13 dialogs (about / bulk / template editor / user admin / log) ----
+
+
+def test_open_about_shows_the_about_dialog(qtbot, tmp_path: Path, monkeypatch):
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    window._open_about()  # should not raise
+
+
+def test_open_bulk_dialog_offers_visible_schemas_and_refreshes_dashboard(
+    qtbot, tmp_path: Path, monkeypatch
+):
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+
+    old_dashboard = window.dashboard
+    window._open_bulk_dialog()
+    assert window.dashboard is not old_dashboard
+    assert window.stack.currentWidget() is window.dashboard
+
+
+def test_open_template_editor_and_refresh_picks_up_new_schema(qtbot, tmp_path: Path, monkeypatch):
+    window, _, project = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    assert len(window.schemas) == 2
+
+    def fake_exec(self):
+        _write(
+            project / "schemas" / "new_widget.yaml",
+            "name: New Widget\nid: new_widget\nversion: 1\nstatus: published\n"
+            "identity_field: name\ntemplate: widget.j2\nfields:\n"
+            "  - key: name\n    label: Name\n    type: string\n    required: true\n",
+        )
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr("configgen.ui.template_editor.TemplateEditorWindow.exec", fake_exec)
+    window._open_template_editor()
+
+    assert len(window.schemas) == 3
+    assert window.stack.currentWidget() is window.dashboard
+
+
+def test_open_user_admin_refreshes_groups_and_dashboard(qtbot, tmp_path: Path, monkeypatch):
+    window, store, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+
+    def fake_exec(self):
+        store.create_group("NetworkTeam")
+        store.assign_user_to_group(window.user.username, "NetworkTeam")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr("configgen.ui.user_admin.UserAdminWindow.exec", fake_exec)
+    window._open_user_admin()
+    assert window.user_groups == {"NetworkTeam"}
+
+
+def test_open_generation_log_wires_regenerate_signal(qtbot, tmp_path: Path, monkeypatch):
+    window, store, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+
+    def fake_exec(self):
+        self.regenerateRequested.emit("widget_server", {"hostname": "web09", "note": "x"})
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr("configgen.ui.generation_log.GenerationLogDialog.exec", fake_exec)
+    window._open_generation_log()
+
+    assert window.generator_view is not None
+    assert window.generator_view.schema.id == "widget_server"
+    assert window.generator_view.form.raw_values()["hostname"] == "web09"
+
+
+def test_regenerate_from_log_prefills_the_form(qtbot, tmp_path: Path, monkeypatch):
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window._regenerate_from_log("widget_server", {"hostname": "r1", "note": "n"})
+    assert window.generator_view.form.raw_values() == {"hostname": "r1", "note": "n"}
+
+
+def test_ctrl_b_shortcut_opens_bulk_dialog(qtbot, tmp_path: Path, monkeypatch):
+    """Confirms the Ctrl+B QShortcut's target by firing its `activated`
+    signal directly, rather than relying on the offscreen QPA plugin to
+    deliver a synthetic key event to it (it doesn't, reliably) — the
+    plugin's key-event routing is Qt's own concern, not ours."""
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+
+    matches = [s for s in window.findChildren(QShortcut) if s.key() == QKeySequence("Ctrl+B")]
+    assert len(matches) == 1
+
+    opened = []
+    monkeypatch.setattr(
+        "configgen.ui.main_window.BulkDialog.exec",
+        lambda self: opened.append(True) or QDialog.DialogCode.Accepted,
+    )
+    matches[0].activated.emit()
+    assert opened

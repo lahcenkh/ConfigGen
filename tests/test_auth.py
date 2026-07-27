@@ -153,6 +153,70 @@ def test_change_password_clears_force_flag_and_updates_hash(tmp_path: Path):
         store.authenticate("admin", "admin")
 
 
+def test_set_role_changes_a_users_role(tmp_path: Path):
+    store = _store(tmp_path)
+    store.create_user("carol", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    store.set_role("carol", ROLE_TEMPLATE_ENGINEER)
+    assert store.get_user("carol").role == ROLE_TEMPLATE_ENGINEER
+
+
+def test_set_role_rejects_unknown_role(tmp_path: Path):
+    store = _store(tmp_path)
+    store.create_user("carol", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    with pytest.raises(AuthError):
+        store.set_role("carol", "superuser")
+
+
+def test_set_role_unknown_user_raises(tmp_path: Path):
+    store = _store(tmp_path)
+    with pytest.raises(AuthError):
+        store.set_role("ghost", ROLE_ADMIN)
+
+
+def test_delete_user_removes_the_account(tmp_path: Path):
+    store = _store(tmp_path)
+    store.create_user("carol", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    store.delete_user("carol")
+    assert store.get_user("carol") is None
+    with pytest.raises(InvalidCredentials):
+        store.authenticate("carol", "hunter22pw")
+
+
+def test_delete_user_also_removes_group_memberships_and_api_keys(tmp_path: Path):
+    store = _store(tmp_path)
+    store.create_user("carol", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    store.create_group("Acme Corp")
+    store.assign_user_to_group("carol", "Acme Corp")
+    store.create_api_key("carol", label="test")
+
+    store.delete_user("carol")
+
+    assert store.members_of_group("Acme Corp") == []
+    assert store.list_api_keys() == []
+
+
+def test_delete_user_preserves_generation_log_entries(tmp_path: Path):
+    store = _store(tmp_path)
+    store.create_user("carol", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    carol = store.get_user("carol")
+    store.record_generation(
+        carol, schema_id="widget", schema_version=1, form_inputs={}, output_filename="a.txt"
+    )
+
+    store.delete_user("carol")
+
+    admin = store.get_user("admin")
+    entries = store.list_generation_log(admin)
+    assert len(entries) == 1
+    assert entries[0]["output_filename"] == "a.txt"
+
+
+def test_delete_unknown_user_raises(tmp_path: Path):
+    store = _store(tmp_path)
+    with pytest.raises(AuthError):
+        store.delete_user("ghost")
+
+
 # -- groups ----------------------------------------------------------------
 
 
@@ -200,6 +264,42 @@ def test_user_can_belong_to_multiple_groups(tmp_path: Path):
     store.assign_user_to_group("carol", "Acme Corp")
     store.assign_user_to_group("carol", "Beta Industries")
     assert store.groups_for_user("carol") == {"Acme Corp", "Beta Industries"}
+
+
+def test_remove_user_from_group(tmp_path: Path):
+    store = _store(tmp_path)
+    store.create_user("carol", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    store.create_group("Acme Corp")
+    store.assign_user_to_group("carol", "Acme Corp")
+
+    store.remove_user_from_group("carol", "Acme Corp")
+
+    assert store.groups_for_user("carol") == set()
+
+
+def test_remove_from_group_unknown_group_raises(tmp_path: Path):
+    store = _store(tmp_path)
+    store.create_user("carol", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    with pytest.raises(AuthError):
+        store.remove_user_from_group("carol", "Ghost Group")
+
+
+def test_members_of_group(tmp_path: Path):
+    store = _store(tmp_path)
+    store.create_user("carol", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    store.create_user("dave", "hunter22pw", ROLE_CONFIG_ENGINEER)
+    store.create_group("Acme Corp")
+    store.assign_user_to_group("carol", "Acme Corp")
+
+    members = store.members_of_group("Acme Corp")
+
+    assert [m.username for m in members] == ["carol"]
+
+
+def test_members_of_unknown_group_raises(tmp_path: Path):
+    store = _store(tmp_path)
+    with pytest.raises(AuthError):
+        store.members_of_group("Ghost Group")
 
 
 # -- API keys ----------------------------------------------------------------

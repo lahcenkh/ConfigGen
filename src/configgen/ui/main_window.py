@@ -50,9 +50,14 @@ from configgen.core.schema import (
 from configgen.paths import output_dir
 from configgen.prepare import PrepareError, run_prepare_hook, services_for_schema
 from configgen.ui import theme
+from configgen.ui.about import AboutDialog
+from configgen.ui.bulk_dialog import BulkDialog
 from configgen.ui.dashboard import Dashboard
 from configgen.ui.form_builder import FormBuilder
+from configgen.ui.generation_log import GenerationLogDialog
 from configgen.ui.highlighters import ConfigHighlighter
+from configgen.ui.template_editor import TemplateEditorWindow
+from configgen.ui.user_admin import UserAdminWindow
 
 
 class GeneratorView(QWidget):
@@ -186,18 +191,28 @@ class MainWindow(QMainWindow):
             self.user, self.schemas, self.user_groups, self.palette, recent_log_entries=recent
         )
         dashboard.templateSelected.connect(self._open_generator)
-        dashboard.bulkGenerateRequested.connect(lambda: self._not_yet_available("Bulk generation"))
-        dashboard.templateEditorRequested.connect(
-            lambda: self._not_yet_available("Template editor")
-        )
-        dashboard.userAdminRequested.connect(lambda: self._not_yet_available("User admin"))
+        dashboard.bulkGenerateRequested.connect(self._open_bulk_dialog)
+        dashboard.templateEditorRequested.connect(self._open_template_editor)
+        dashboard.userAdminRequested.connect(self._open_user_admin)
         dashboard.importConfigPackRequested.connect(
             lambda: self._not_yet_available("Config pack import")
         )
-        dashboard.generationLogRequested.connect(
-            lambda: self._not_yet_available("Generation log viewer")
-        )
+        dashboard.generationLogRequested.connect(self._open_generation_log)
         return dashboard
+
+    def _refresh_dashboard(self) -> None:
+        """Rebuilds the dashboard from disk — needed after the template
+        editor or bulk dialog change what's visible (schema status/list,
+        recent generations)."""
+        self.schemas = self._load_schemas()
+        old_dashboard = self.dashboard
+        was_current = self.stack.currentWidget() is old_dashboard
+        self.dashboard = self._build_dashboard()
+        self.stack.addWidget(self.dashboard)
+        self.stack.removeWidget(old_dashboard)
+        old_dashboard.deleteLater()
+        if was_current:
+            self.stack.setCurrentWidget(self.dashboard)
 
     def _build_toolbar(self) -> None:
         toolbar = self.addToolBar("View")
@@ -206,6 +221,10 @@ class MainWindow(QMainWindow):
         dark_action.setChecked(self.dark)
         dark_action.toggled.connect(self._on_dark_mode_toggled)
         toolbar.addAction(dark_action)
+
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self._open_about)
+        toolbar.addAction(about_action)
 
     def _build_shortcuts(self) -> None:
         def bind(sequence: str, handler) -> None:
@@ -218,7 +237,7 @@ class MainWindow(QMainWindow):
         bind("Ctrl+S", lambda: self.generator_view and self._save_as(self.generator_view))
         bind("Ctrl+D", lambda: self.generator_view and self._diff(self.generator_view))
         bind("Ctrl+N", self._back_to_dashboard)
-        bind("Ctrl+B", lambda: self._not_yet_available("Bulk generation"))
+        bind("Ctrl+B", self._open_bulk_dialog)
         bind("Escape", self._back_to_dashboard)
 
     # -- theme ---------------------------------------------------------
@@ -243,6 +262,38 @@ class MainWindow(QMainWindow):
 
     def _back_to_dashboard(self) -> None:
         self.stack.setCurrentWidget(self.dashboard)
+
+    def _open_about(self) -> None:
+        AboutDialog(self).exec()
+
+    def _open_bulk_dialog(self) -> None:
+        schema_paths = {s.id: s.source_path for s in self.schemas if s.source_path}
+        dialog = BulkDialog(
+            self.user, self.store, self.schemas, schema_paths, self.user_groups, self
+        )
+        dialog.exec()
+        self._refresh_dashboard()
+
+    def _open_template_editor(self) -> None:
+        dialog = TemplateEditorWindow(self.user, self.store, self.schemas_dir, self.palette, self)
+        dialog.exec()
+        self._refresh_dashboard()
+
+    def _open_user_admin(self) -> None:
+        dialog = UserAdminWindow(self.store, self.user, self)
+        dialog.exec()
+        self.user_groups = self.store.groups_for_user(self.user.username)
+        self._refresh_dashboard()
+
+    def _open_generation_log(self) -> None:
+        dialog = GenerationLogDialog(self.store, self.user, self)
+        dialog.regenerateRequested.connect(self._regenerate_from_log)
+        dialog.exec()
+
+    def _regenerate_from_log(self, schema_id: str, form_inputs: dict) -> None:
+        self._open_generator(schema_id)
+        if self.generator_view is not None:
+            self.generator_view.form.set_raw_values(form_inputs)
 
     def _schema_path_for(self, schema_id: str) -> Path | None:
         for path in find_schema_files(self.schemas_dir):

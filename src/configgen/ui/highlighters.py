@@ -1,11 +1,13 @@
-"""Generated-config syntax highlighting (§15).
+"""Config preview, YAML schema, and Jinja template syntax highlighting
+(§15 — "code editor with syntax highlighting" for the template editor,
+§13.4).
 
-A rendered config can be IOS, JunOS, a shell script, or anything else a
-template author writes — there's no single fixed grammar to target, so
-this is a light, generic highlighter: the ConfigGen header line, comment
-lines (`!`/`#`/`//`/`;`, whichever the schema's `comment_prefix` is, plus
-the other conventional ones so a preview never looks unhighlighted just
-because of which platform it's for), quoted strings, and IPv4 addresses.
+`ConfigHighlighter` targets rendered output: a config can be IOS, JunOS, a
+shell script, or anything else a template author writes, so there's no
+single fixed grammar to target — just the ConfigGen header line, comment
+lines, quoted strings, and IPv4 addresses. `YamlHighlighter` and
+`JinjaHighlighter` target the two source files a Template Engineer
+actually edits.
 """
 
 from __future__ import annotations
@@ -58,3 +60,88 @@ class ConfigHighlighter(QSyntaxHighlighter):
             while match_iter.hasNext():
                 match = match_iter.next()
                 self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
+
+
+_YAML_COMMENT_RE = QRegularExpression(r"#.*$")
+_YAML_KEY_RE = QRegularExpression(r"^\s*(?:-\s*)?([A-Za-z0-9_.]+)\s*:")
+
+
+class YamlHighlighter(QSyntaxHighlighter):
+    """Comments, mapping keys, and quoted strings — enough to make a
+    schema.yaml scannable, not a full YAML grammar."""
+
+    def __init__(self, document: QTextDocument, palette: Palette):
+        super().__init__(document)
+        self._palette = palette
+        self._build_formats()
+
+    def _build_formats(self) -> None:
+        self._comment_format = _format(self._palette.text_muted, italic=True)
+        self._key_format = _format(self._palette.accent, bold=True)
+        self._string_format = _format(self._palette.success)
+
+    def set_palette(self, palette: Palette) -> None:
+        self._palette = palette
+        self._build_formats()
+        self.rehighlight()
+
+    def highlightBlock(self, text: str) -> None:
+        key_match = _YAML_KEY_RE.match(text)
+        if key_match.hasMatch():
+            self.setFormat(
+                key_match.capturedStart(1), key_match.capturedLength(1), self._key_format
+            )
+
+        string_iter = _STRING_RE.globalMatch(text)
+        while string_iter.hasNext():
+            match = string_iter.next()
+            self.setFormat(match.capturedStart(), match.capturedLength(), self._string_format)
+
+        comment_match = _YAML_COMMENT_RE.match(text)
+        if comment_match.hasMatch():
+            start = comment_match.capturedStart()
+            self.setFormat(start, len(text) - start, self._comment_format)
+
+
+_JINJA_TAG_RE = QRegularExpression(r"\{\%.*?\%\}|\{\{.*?\}\}")
+_JINJA_COMMENT_RE = QRegularExpression(r"\{\#.*?\#\}")
+_JINJA_KEYWORD_RE = QRegularExpression(
+    r"\b(if|else|elif|endif|for|endfor|in|not|and|or|set|block|endblock|macro|endmacro)\b"
+)
+
+
+class JinjaHighlighter(QSyntaxHighlighter):
+    """Delimiters, keywords inside them, and `{# #}` comments — for a
+    template's `.j2` source, distinct from the rendered-output highlighter
+    (`ConfigHighlighter`) applied to what it produces."""
+
+    def __init__(self, document: QTextDocument, palette: Palette):
+        super().__init__(document)
+        self._palette = palette
+        self._build_formats()
+
+    def _build_formats(self) -> None:
+        self._tag_format = _format(self._palette.accent, bold=True)
+        self._keyword_format = _format(self._palette.danger, bold=True)
+        self._comment_format = _format(self._palette.text_muted, italic=True)
+
+    def set_palette(self, palette: Palette) -> None:
+        self._palette = palette
+        self._build_formats()
+        self.rehighlight()
+
+    def highlightBlock(self, text: str) -> None:
+        tag_iter = _JINJA_TAG_RE.globalMatch(text)
+        while tag_iter.hasNext():
+            match = tag_iter.next()
+            self.setFormat(match.capturedStart(), match.capturedLength(), self._tag_format)
+
+        keyword_iter = _JINJA_KEYWORD_RE.globalMatch(text)
+        while keyword_iter.hasNext():
+            match = keyword_iter.next()
+            self.setFormat(match.capturedStart(), match.capturedLength(), self._keyword_format)
+
+        comment_iter = _JINJA_COMMENT_RE.globalMatch(text)
+        while comment_iter.hasNext():
+            match = comment_iter.next()
+            self.setFormat(match.capturedStart(), match.capturedLength(), self._comment_format)
