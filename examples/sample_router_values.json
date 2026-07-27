@@ -1,0 +1,12 @@
+{
+  "hostname": "rtr-core-01",
+  "mgmt_interface": "GigabitEthernet0/0",
+  "mgmt_ip": "10.10.10.1/24",
+  "vlan_id": 10,
+  "enable_ospf": true,
+  "ospf_process_id": 1,
+  "ospf_area": 0,
+  "ntp_server": "192.0.2.123",
+  "snmp_community": "public-ro",
+  "notes": "Example router for the README quick start."
+}

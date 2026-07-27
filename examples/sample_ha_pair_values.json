@@ -1,0 +1,9 @@
+{
+  "pair_name": "edge-pair-01",
+  "shared_vlan": 40,
+  "subnet": "10.40.50.0/24",
+  "primary_ip": "10.40.50.2",
+  "backup_ip": "10.40.50.3",
+  "vrrp_group": 1,
+  "vrrp_vip": "10.40.50.1"
+}

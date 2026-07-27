@@ -1,0 +1,6 @@
+{
+  "region": "us-east",
+  "device_name": "edge-01",
+  "asset_tag": "AT-10234",
+  "notes": "Onboarded via the docs/adding-a-config.md walkthrough."
+}
