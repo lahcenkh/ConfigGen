@@ -1,6 +1,7 @@
+import zipfile
 from pathlib import Path
 
-from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
 
 from configgen.core.auth import AuthStore
 from configgen.core.schema import project_history_dir_for
@@ -264,3 +265,33 @@ def test_history_save_diff_and_restore(qtbot, tmp_path: Path, monkeypatch):
     assert len(history.entries) == 3
     # Restored content should match v1's template again.
     assert "hello {{ name }}" in (window._templates_dir() / "widget.j2").read_text(encoding="utf-8")
+
+
+# -- config pack export ---------------------------------------------------------
+
+
+def test_export_config_pack_writes_a_zip(qtbot, tmp_path: Path, monkeypatch):
+    window, _store = _editor(tmp_path, qtbot)
+    window.schema_list.setCurrentRow(0)
+
+    out_zip = tmp_path / "widget.configpack.zip"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(out_zip), ""))
+    )
+    window._export_config_pack()
+
+    assert out_zip.is_file()
+    assert "Exported to" in window.message_label.text()
+    with zipfile.ZipFile(out_zip) as zf:
+        assert "schema.yaml" in zf.namelist()
+        assert "templates/widget.j2" in zf.namelist()
+
+
+def test_export_config_pack_cancelled_dialog_does_nothing(qtbot, tmp_path: Path, monkeypatch):
+    window, _store = _editor(tmp_path, qtbot)
+    window.schema_list.setCurrentRow(0)
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: ("", "")))
+    window._export_config_pack()
+
+    assert window.message_label.text() == ""

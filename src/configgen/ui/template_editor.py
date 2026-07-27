@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from configgen.core.auth import ROLE_ADMIN, AuthStore, User
+from configgen.core.configpack import export_config_pack
 from configgen.core.db import DatabaseError, database_for_schema
 from configgen.core.extractor import classify_variables, extract_variables_from_file
 from configgen.core.registry import load_project_filters
@@ -379,12 +381,16 @@ class TemplateEditorWindow(QDialog):
         self.history_button = QPushButton("History")
         self.history_button.setObjectName("secondary")
         self.history_button.clicked.connect(self._open_history)
+        self.export_button = QPushButton("Export Config Pack")
+        self.export_button.setObjectName("secondary")
+        self.export_button.clicked.connect(self._export_config_pack)
         for button in (
             self.save_button,
             self.check_button,
             self.extract_button,
             self.test_render_button,
             self.history_button,
+            self.export_button,
         ):
             button_row.addWidget(button)
         right_layout.addLayout(button_row)
@@ -454,6 +460,7 @@ class TemplateEditorWindow(QDialog):
             self.extract_button,
             self.test_render_button,
             self.history_button,
+            self.export_button,
             self.publish_button,
             self.unpublish_button,
             self.deprecate_button,
@@ -642,6 +649,20 @@ class TemplateEditorWindow(QDialog):
         )
         dialog.exec()
         self._load_schema(self.current_path)  # picks up any restore
+
+    # -- config pack export ---------------------------------------------------------
+
+    def _export_config_pack(self) -> None:
+        if self.current_schema is None or self.current_path is None:
+            return
+        default_name = f"{self.current_schema.id}.configpack.zip"
+        path_str, _ = QFileDialog.getSaveFileName(
+            self, "Export Config Pack", default_name, "Config packs (*.zip)"
+        )
+        if not path_str:
+            return
+        output_path = export_config_pack(self.current_path, path_str, author=self.user.username)
+        self.message_label.setText(f"Exported to {output_path}.")
 
     # -- lifecycle ---------------------------------------------------------
 

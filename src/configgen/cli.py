@@ -14,6 +14,7 @@ import yaml
 from configgen.appinfo import APP_NAME, __version__
 from configgen.core.auth import (
     ROLE_ADMIN,
+    ROLE_TEMPLATE_ENGINEER,
     ROLES,
     AuthError,
     AuthStore,
@@ -22,6 +23,7 @@ from configgen.core.auth import (
     visible_schemas,
 )
 from configgen.core.bulk import read_rows, run_bulk
+from configgen.core.configpack import ConfigPackError, export_config_pack, import_config_pack
 from configgen.core.db import (
     Database,
     DatabaseError,
@@ -561,6 +563,61 @@ def cmd_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    store = _auth_store_for(args)
+    try:
+        actor = _authenticate_actor(args, store)
+        require_role(actor, ROLE_ADMIN, ROLE_TEMPLATE_ENGINEER)
+    except AuthError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    directory = Path(args.dir) if args.dir else schemas_dir()
+    try:
+        schema_path = _find_schema_path(args.id, directory)
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    sample_values = None
+    if args.sample_values:
+        sample_values = json.loads(Path(args.sample_values).read_text(encoding="utf-8"))
+
+    output_path = Path(args.output) if args.output else Path(f"{args.id}.configpack.zip")
+    export_config_pack(
+        schema_path,
+        output_path,
+        author=args.author,
+        description=args.description,
+        sample_values=sample_values,
+    )
+    print(f"exported '{args.id}' -> {output_path}")
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    store = _auth_store_for(args)
+    try:
+        actor = _authenticate_actor(args, store)
+        require_role(actor, ROLE_ADMIN)
+    except AuthError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    resources_root = Path(args.resources) if args.resources else schemas_dir().parent
+    on_conflict = "rename" if args.rename else ("overwrite" if args.overwrite else "error")
+    try:
+        result = import_config_pack(
+            args.file, resources_root, on_conflict=on_conflict, new_id=args.rename
+        )
+    except ConfigPackError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    verb = "overwrote" if result.conflict_resolved and on_conflict == "overwrite" else "imported"
+    print(f"{verb} '{result.schema_id}' -> {result.schema_path}")
+    return 0
+
+
 def cmd_plugins(args: argparse.Namespace) -> int:
     directory = Path(args.dir) if args.dir else schemas_dir()
     project_root = directory.parent
@@ -940,6 +997,35 @@ def build_parser() -> argparse.ArgumentParser:
             "--as-api-key", help="Acting user's API key (instead of --as-username/--as-password)"
         )
         p.add_argument("--users-db", help="Path to users.db (default: users.db in the app root)")
+
+    p_export = subparsers.add_parser(
+        "export", help="Export a schema as a .configpack.zip (Admin/Template Engineer)"
+    )
+    p_export.add_argument("id", help="Schema id")
+    p_export.add_argument("--dir", help="Schemas directory (default: resources/schemas)")
+    p_export.add_argument(
+        "--output", help="Output .configpack.zip path (default: <id>.configpack.zip)"
+    )
+    p_export.add_argument("--author")
+    p_export.add_argument("--description")
+    p_export.add_argument(
+        "--sample-values", help="Path to a JSON file of example form inputs to bundle"
+    )
+    _add_actor_args(p_export)
+    p_export.set_defaults(func=cmd_export)
+
+    p_import = subparsers.add_parser("import", help="Import a .configpack.zip (Admin only)")
+    p_import.add_argument("file", help="Path to the .configpack.zip file")
+    p_import.add_argument("--resources", help="Resources root to import into (default: resources/)")
+    conflict_group = p_import.add_mutually_exclusive_group()
+    conflict_group.add_argument(
+        "--overwrite", action="store_true", help="Overwrite an existing schema with the same id"
+    )
+    conflict_group.add_argument(
+        "--rename", metavar="NEW_ID", help="Import under a new id instead of the packaged one"
+    )
+    _add_actor_args(p_import)
+    p_import.set_defaults(func=cmd_import)
 
     p_user = subparsers.add_parser("user", help="User management (Admin only)")
     p_user.set_defaults(func=lambda a, _p=p_user: _print_help(_p))

@@ -52,6 +52,7 @@ from configgen.prepare import PrepareError, run_prepare_hook, services_for_schem
 from configgen.ui import theme
 from configgen.ui.about import AboutDialog
 from configgen.ui.bulk_dialog import BulkDialog
+from configgen.ui.config_pack_import import ImportConfigPackDialog
 from configgen.ui.dashboard import Dashboard
 from configgen.ui.form_builder import FormBuilder
 from configgen.ui.generation_log import GenerationLogDialog
@@ -194,9 +195,7 @@ class MainWindow(QMainWindow):
         dashboard.bulkGenerateRequested.connect(self._open_bulk_dialog)
         dashboard.templateEditorRequested.connect(self._open_template_editor)
         dashboard.userAdminRequested.connect(self._open_user_admin)
-        dashboard.importConfigPackRequested.connect(
-            lambda: self._not_yet_available("Config pack import")
-        )
+        dashboard.importConfigPackRequested.connect(self._open_import_config_pack)
         dashboard.generationLogRequested.connect(self._open_generation_log)
         return dashboard
 
@@ -294,6 +293,11 @@ class MainWindow(QMainWindow):
         self._open_generator(schema_id)
         if self.generator_view is not None:
             self.generator_view.form.set_raw_values(form_inputs)
+
+    def _open_import_config_pack(self) -> None:
+        dialog = ImportConfigPackDialog(self.schemas_dir.parent, self)
+        dialog.exec()
+        self._refresh_dashboard()
 
     def _schema_path_for(self, schema_id: str) -> Path | None:
         for path in find_schema_files(self.schemas_dir):

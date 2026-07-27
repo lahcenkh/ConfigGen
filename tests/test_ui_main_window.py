@@ -350,3 +350,26 @@ def test_ctrl_b_shortcut_opens_bulk_dialog(qtbot, tmp_path: Path, monkeypatch):
     )
     matches[0].activated.emit()
     assert opened
+
+
+def test_open_import_config_pack_refreshes_dashboard_with_new_schema(
+    qtbot, tmp_path: Path, monkeypatch
+):
+    window, _, project = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    assert len(window.schemas) == 2
+
+    def fake_exec(self):
+        _write(
+            project / "schemas" / "imported_widget.yaml",
+            "name: Imported Widget\nid: imported_widget\nversion: 1\nstatus: published\n"
+            "identity_field: name\ntemplate: widget.j2\nfields:\n"
+            "  - key: name\n    label: Name\n    type: string\n    required: true\n",
+        )
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr("configgen.ui.config_pack_import.ImportConfigPackDialog.exec", fake_exec)
+    window._open_import_config_pack()
+
+    assert len(window.schemas) == 3
+    assert window.stack.currentWidget() is window.dashboard
