@@ -50,6 +50,7 @@ class GenerationLogDialog(QDialog):
         self.table.setHorizontalHeaderLabels(
             ["Timestamp", "User", "Group", "Schema", "Version", "Output filename"]
         )
+        self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._show_selected)
         layout.addWidget(self.table)

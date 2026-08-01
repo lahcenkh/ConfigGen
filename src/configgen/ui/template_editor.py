@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -62,6 +63,7 @@ from configgen.prepare import PrepareError, run_prepare_hook, services_for_schem
 from configgen.ui import theme
 from configgen.ui.form_builder import FormBuilder
 from configgen.ui.highlighters import ConfigHighlighter, JinjaHighlighter, YamlHighlighter
+from configgen.ui.widgets import StatusBadge
 
 _STATUS_RE = re.compile(r"(?m)^status:\s*\w+")
 
@@ -142,6 +144,7 @@ class TestRenderDialog(QDialog):
         right_layout.addWidget(QLabel("Output"))
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
+        self.output.setFont(QFont(theme.MONO_FONT_FAMILY))
         right_layout.addWidget(self.output, stretch=1)
         layout.addWidget(right)
 
@@ -210,6 +213,7 @@ class HistoryDialog(QDialog):
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Version", "Author", "Timestamp"])
+        self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
 
         buttons = QHBoxLayout()
@@ -332,9 +336,14 @@ class TemplateEditorWindow(QDialog):
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
+        templates_label = QLabel("TEMPLATES")
+        templates_label.setObjectName("label-sm")
+        left_layout.addWidget(templates_label)
         self.schema_list = QListWidget()
+        self.schema_list.setObjectName("schema-list")
+        self.schema_list.setSpacing(2)
         self.schema_list.currentItemChanged.connect(self._on_selection_changed)
-        left_layout.addWidget(self.schema_list)
+        left_layout.addWidget(self.schema_list, stretch=1)
         new_button = QPushButton("New Schema")
         new_button.clicked.connect(self._new_schema)
         left_layout.addWidget(new_button)
@@ -342,12 +351,18 @@ class TemplateEditorWindow(QDialog):
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
+        header_row = QHBoxLayout()
         self.status_header = QLabel("(no schema selected)")
-        self.status_header.setStyleSheet("font-weight: 600;")
-        right_layout.addWidget(self.status_header)
+        self.status_header.setObjectName("headline-md")
+        header_row.addWidget(self.status_header, stretch=1)
+        self.status_badge = StatusBadge("draft", palette)
+        self.status_badge.setVisible(False)
+        header_row.addWidget(self.status_badge)
+        right_layout.addLayout(header_row)
 
         right_layout.addWidget(QLabel("schema.yaml"))
         self.schema_editor = QPlainTextEdit()
+        self.schema_editor.setFont(QFont(theme.MONO_FONT_FAMILY))
         self.schema_highlighter = YamlHighlighter(self.schema_editor.document(), palette)
         right_layout.addWidget(self.schema_editor, stretch=1)
 
@@ -359,6 +374,7 @@ class TemplateEditorWindow(QDialog):
         right_layout.addLayout(template_row)
 
         self.template_editor = QPlainTextEdit()
+        self.template_editor.setFont(QFont(theme.MONO_FONT_FAMILY))
         self.jinja_highlighter = JinjaHighlighter(self.template_editor.document(), palette)
         right_layout.addWidget(self.template_editor, stretch=1)
 
@@ -482,10 +498,10 @@ class TemplateEditorWindow(QDialog):
         self.schema_editor.setPlainText(path.read_text(encoding="utf-8"))
         try:
             self.current_schema = load_schema(path)
-            self.status_header.setText(
-                f"{self.current_schema.name}  (v{self.current_schema.version}, "
-                f"{self.current_schema.status})"
-            )
+            schema = self.current_schema
+            self.status_header.setText(f"{schema.name}  (v{schema.version})")
+            self.status_badge.set_status(self.current_schema.status, self.palette)
+            self.status_badge.setVisible(True)
             self.document_combo.blockSignals(True)
             self.document_combo.clear()
             for doc in self.current_schema.document_list():
@@ -495,6 +511,7 @@ class TemplateEditorWindow(QDialog):
         except Exception as exc:  # noqa: BLE001 - shown to the user, not swallowed
             self.current_schema = None
             self.status_header.setText(f"(invalid schema: {exc})")
+            self.status_badge.setVisible(False)
             self.document_combo.clear()
             self.template_editor.clear()
         self._set_editing_enabled(True)

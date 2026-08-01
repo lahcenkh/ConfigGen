@@ -12,10 +12,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -58,6 +60,7 @@ from configgen.ui.form_builder import FormBuilder
 from configgen.ui.generation_log import GenerationLogDialog
 from configgen.ui.highlighters import ConfigHighlighter
 from configgen.ui.settings import auto_update_check_enabled, set_auto_update_check_enabled
+from configgen.ui.sidebar import Sidebar
 from configgen.ui.template_editor import TemplateEditorWindow
 from configgen.ui.update_notice import UpdateBanner, UpdateCheckWorker
 from configgen.ui.user_admin import UserAdminWindow
@@ -83,18 +86,41 @@ class GeneratorView(QWidget):
         self.last_rendered: dict[str, str] = {}
         self._highlighters: list[ConfigHighlighter] = []
 
-        layout = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        breadcrumb_row = QHBoxLayout()
+        breadcrumb_row.setContentsMargins(12, 8, 12, 8)
+        breadcrumb = QLabel(f"DASHBOARD  ›  {schema.name.upper()}")
+        breadcrumb.setObjectName("label-sm")
+        breadcrumb_row.addWidget(breadcrumb)
+        breadcrumb_row.addStretch()
+        self.validation_badge = QLabel("NOT YET VALIDATED")
+        self.validation_badge.setObjectName("badge")
+        self._style_validation_badge(self.palette.text_muted)
+        breadcrumb_row.addWidget(self.validation_badge)
+        outer.addLayout(breadcrumb_row)
+
+        divider = QFrame()
+        divider.setObjectName("divider")
+        outer.addWidget(divider)
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(8, 8, 8, 8)
+        outer.addLayout(layout, stretch=1)
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
         title = QLabel(schema.name)
-        title.setStyleSheet("font-weight: 600; font-size: 15px;")
+        title.setObjectName("headline-md")
         left_layout.addWidget(title)
 
         self.form_scroll = QScrollArea()
         self.form_scroll.setWidgetResizable(True)
         self.form = FormBuilder(schema, database=database)
+        self.form.valuesChanged.connect(self._update_validation_badge)
         self.form_scroll.setWidget(self.form)
         left_layout.addWidget(self.form_scroll, stretch=1)
 
@@ -115,7 +141,21 @@ class GeneratorView(QWidget):
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
-        right_layout.addWidget(QLabel("Preview"))
+        preview_header = QHBoxLayout()
+        preview_title = QLabel("Preview")
+        preview_title.setObjectName("headline-md")
+        preview_header.addWidget(preview_title)
+        preview_header.addStretch()
+        self.copy_button = QPushButton("Copy")
+        self.copy_button.setObjectName("secondary")
+        self.save_button = QPushButton("Save As…  (Ctrl+S)")
+        self.save_button.setObjectName("secondary")
+        self.diff_button = QPushButton("Diff  (Ctrl+D)")
+        self.diff_button.setObjectName("secondary")
+        preview_header.addWidget(self.copy_button)
+        preview_header.addWidget(self.save_button)
+        preview_header.addWidget(self.diff_button)
+        right_layout.addLayout(preview_header)
         self.preview_tabs = QTabWidget()
         right_layout.addWidget(self.preview_tabs, stretch=1)
         splitter.addWidget(right)
@@ -132,6 +172,7 @@ class GeneratorView(QWidget):
         for doc_key, text in rendered.items():
             editor = QPlainTextEdit()
             editor.setReadOnly(True)
+            editor.setFont(QFont(theme.MONO_FONT_FAMILY))
             editor.setPlainText(text)
             self._highlighters.append(ConfigHighlighter(editor.document(), self.palette))
             label = docs_by_key[doc_key].label if doc_key in docs_by_key else doc_key
@@ -143,6 +184,26 @@ class GeneratorView(QWidget):
         self.palette = palette
         for highlighter in self._highlighters:
             highlighter.set_palette(palette)
+
+    def _style_validation_badge(self, color: str) -> None:
+        self.validation_badge.setStyleSheet(
+            f"QLabel#badge {{ color: {color}; border: 1px solid {color}; "
+            f"border-radius: {theme.RADIUS_SM}; padding: 1px 6px; "
+            f"font-weight: 700; font-size: 10px; }}"
+        )
+
+    def _update_validation_badge(self) -> None:
+        # A silent validity check — reuses FormBuilder.validate() (already
+        # idempotent, already called on every field change internally) just
+        # to read its result; the per-field error painting it does as a
+        # side effect is exactly what should happen once the user's
+        # actually touched the form, never before.
+        if self.form.validate() is None:
+            self.validation_badge.setText("NEEDS ATTENTION")
+            self._style_validation_badge(self.palette.danger)
+        else:
+            self.validation_badge.setText("FORM VALID")
+            self._style_validation_badge(self.palette.success)
 
 
 class MainWindow(QMainWindow):
@@ -171,21 +232,29 @@ class MainWindow(QMainWindow):
         self.schemas = self._load_schemas()
 
         central = QWidget()
-        central_layout = QVBoxLayout(central)
+        central_layout = QHBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
 
+        self.sidebar = self._build_sidebar()
+        central_layout.addWidget(self.sidebar)
+
+        right_column = QWidget()
+        right_layout = QVBoxLayout(right_column)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
         self.update_banner = UpdateBanner(self.palette)
-        central_layout.addWidget(self.update_banner)
+        right_layout.addWidget(self.update_banner)
 
         self.stack = QStackedWidget()
-        central_layout.addWidget(self.stack, stretch=1)
+        right_layout.addWidget(self.stack, stretch=1)
+        central_layout.addWidget(right_column, stretch=1)
         self.setCentralWidget(central)
 
         self.dashboard = self._build_dashboard()
         self.stack.addWidget(self.dashboard)
 
-        self._build_toolbar()
         self._build_shortcuts()
         self._apply_theme()
 
@@ -209,11 +278,7 @@ class MainWindow(QMainWindow):
             self.user, self.schemas, self.user_groups, self.palette, recent_log_entries=recent
         )
         dashboard.templateSelected.connect(self._open_generator)
-        dashboard.bulkGenerateRequested.connect(self._open_bulk_dialog)
-        dashboard.templateEditorRequested.connect(self._open_template_editor)
-        dashboard.userAdminRequested.connect(self._open_user_admin)
-        dashboard.importConfigPackRequested.connect(self._open_import_config_pack)
-        dashboard.generationLogRequested.connect(self._open_generation_log)
+        dashboard.regenerateRequested.connect(self._regenerate_from_log)
         return dashboard
 
     def _refresh_dashboard(self) -> None:
@@ -230,23 +295,23 @@ class MainWindow(QMainWindow):
         if was_current:
             self.stack.setCurrentWidget(self.dashboard)
 
-    def _build_toolbar(self) -> None:
-        toolbar = self.addToolBar("View")
-        dark_action = QAction("Dark Mode", self)
-        dark_action.setCheckable(True)
-        dark_action.setChecked(self.dark)
-        dark_action.toggled.connect(self._on_dark_mode_toggled)
-        toolbar.addAction(dark_action)
-
-        about_action = QAction("About", self)
-        about_action.triggered.connect(self._open_about)
-        toolbar.addAction(about_action)
-
-        update_action = QAction("Check for Updates", self)
-        update_action.setCheckable(True)
-        update_action.setChecked(auto_update_check_enabled())
-        update_action.toggled.connect(set_auto_update_check_enabled)
-        toolbar.addAction(update_action)
+    def _build_sidebar(self) -> Sidebar:
+        sidebar = Sidebar(
+            self.user,
+            self.palette,
+            dark=self.dark,
+            auto_update_check=auto_update_check_enabled(),
+        )
+        sidebar.homeRequested.connect(self._back_to_dashboard)
+        sidebar.templateEditorRequested.connect(self._open_template_editor)
+        sidebar.userAdminRequested.connect(self._open_user_admin)
+        sidebar.importConfigPackRequested.connect(self._open_import_config_pack)
+        sidebar.bulkGenerateRequested.connect(self._open_bulk_dialog)
+        sidebar.generationLogRequested.connect(self._open_generation_log)
+        sidebar.aboutRequested.connect(self._open_about)
+        sidebar.darkModeToggled.connect(self._on_dark_mode_toggled)
+        sidebar.autoUpdateToggled.connect(set_auto_update_check_enabled)
+        return sidebar
 
     def _build_shortcuts(self) -> None:
         def bind(sequence: str, handler) -> None:
@@ -354,6 +419,9 @@ class MainWindow(QMainWindow):
         view = GeneratorView(schema, schema_path, database, self.palette)
         view.preview_button.clicked.connect(lambda: self._preview(view))
         view.generate_button.clicked.connect(lambda: self._generate(view))
+        view.copy_button.clicked.connect(lambda: self._copy_to_clipboard(view))
+        view.save_button.clicked.connect(lambda: self._save_as(view))
+        view.diff_button.clicked.connect(lambda: self._diff(view))
 
         if self.generator_view is not None:
             self.stack.removeWidget(self.generator_view)
@@ -453,6 +521,14 @@ class MainWindow(QMainWindow):
         if index < 0:
             return None
         return list(view.last_rendered)[index]
+
+    def _copy_to_clipboard(self, view: GeneratorView) -> None:
+        if not view.last_rendered:
+            QMessageBox.information(self, "Nothing to copy", "Preview or Generate first.")
+            return
+        doc_key = self._current_doc_key(view) or next(iter(view.last_rendered))
+        QApplication.clipboard().setText(view.last_rendered[doc_key])
+        view.status_label.setText("Copied to clipboard.")
 
     def _save_as(self, view: GeneratorView) -> None:
         if not view.last_rendered:

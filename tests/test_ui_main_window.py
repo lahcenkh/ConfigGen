@@ -1,7 +1,7 @@
 import time
 from pathlib import Path
 
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialog, QFileDialog
 
 from configgen.core.auth import AuthStore
@@ -243,7 +243,7 @@ def test_dark_mode_toggle_persists_and_restyles(qtbot, tmp_path: Path, monkeypat
 
     window._on_dark_mode_toggled(True)
     assert window.dark is True
-    assert "background-color: #1a1d21" in window.styleSheet()
+    assert "background-color: #131313" in window.styleSheet()
 
     # A fresh window for the same user picks up the persisted preference.
     window2 = MainWindow(window.user, window.store, window.schemas_dir, check_for_updates=False)
@@ -332,6 +332,13 @@ def test_regenerate_from_log_prefills_the_form(qtbot, tmp_path: Path, monkeypatc
     assert window.generator_view.form.raw_values() == {"hostname": "r1", "note": "n"}
 
 
+def test_dashboard_reopen_button_prefills_the_form(qtbot, tmp_path: Path, monkeypatch):
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.dashboard.regenerateRequested.emit("widget_server", {"hostname": "r2", "note": "n2"})
+    assert window.generator_view.form.raw_values() == {"hostname": "r2", "note": "n2"}
+
+
 def test_ctrl_b_shortcut_opens_bulk_dialog(qtbot, tmp_path: Path, monkeypatch):
     """Confirms the Ctrl+B QShortcut's target by firing its `activated`
     signal directly, rather than relying on the offscreen QPA plugin to
@@ -411,8 +418,7 @@ def test_update_check_toggle_persists_the_setting(qtbot, tmp_path: Path, monkeyp
     qtbot.addWidget(window)
     assert auto_update_check_enabled() is True
 
-    toggle = next(a for a in window.findChildren(QAction) if a.text() == "Check for Updates")
-    toggle.setChecked(False)
+    window.sidebar.auto_update_checkbox.setChecked(False)
 
     assert auto_update_check_enabled() is False
 

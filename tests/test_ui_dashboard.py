@@ -1,8 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtWidgets import QPushButton
-
-from configgen.core.auth import ROLE_ADMIN, ROLE_CONFIG_ENGINEER, ROLE_TEMPLATE_ENGINEER, User
+from configgen.core.auth import ROLE_ADMIN, User
 from configgen.core.schema import find_schema_files, load_schema
 from configgen.ui.dashboard import Dashboard
 from configgen.ui.theme import LIGHT
@@ -53,6 +51,18 @@ def test_group_filter_has_only_all_groups_for_shipped_examples(qtbot):
     assert group_names == ["All groups"]  # none of the shipped examples declare a group
 
 
+def test_status_filter_narrows_tiles(qtbot):
+    dash = Dashboard(_user(ROLE_ADMIN), SCHEMAS, set(), LIGHT)
+    qtbot.addWidget(dash)
+    # Every shipped example ships published (confirmed by the "all schemas
+    # visible" assertion elsewhere) - filtering to "draft" must empty the grid.
+    dash.status_filter.setCurrentText("draft")
+    assert _tile_schema_ids(dash) == set()
+
+    dash.status_filter.setCurrentText("published")
+    assert _tile_schema_ids(dash) == {s.id for s in SCHEMAS}
+
+
 def test_template_tile_click_emits_template_selected(qtbot):
     dash = Dashboard(_user(ROLE_ADMIN), SCHEMAS, set(), LIGHT)
     qtbot.addWidget(dash)
@@ -60,49 +70,6 @@ def test_template_tile_click_emits_template_selected(qtbot):
     with qtbot.waitSignal(dash.templateSelected, timeout=1000) as blocker:
         tile.clicked.emit(tile.schema.id)
     assert blocker.args == [tile.schema.id]
-
-
-def test_bulk_generate_button_emits_signal(qtbot):
-    dash = Dashboard(_user(ROLE_CONFIG_ENGINEER), SCHEMAS, set(), LIGHT)
-    qtbot.addWidget(dash)
-    bulk_button = next(b for b in dash.findChildren(QPushButton) if b.text() == "Bulk Generate")
-    with qtbot.waitSignal(dash.bulkGenerateRequested, timeout=1000):
-        bulk_button.click()
-
-
-def test_config_engineer_sees_no_admin_or_editor_buttons(qtbot):
-    dash = Dashboard(_user(ROLE_CONFIG_ENGINEER), SCHEMAS, set(), LIGHT)
-    qtbot.addWidget(dash)
-    labels = {b.text() for b in dash.findChildren(QPushButton)}
-    assert "Template Editor" not in labels
-    assert "User Admin" not in labels
-    assert "Import Config Pack" not in labels
-    assert "Bulk Generate" in labels
-
-
-def test_template_engineer_sees_template_editor_but_not_user_admin(qtbot):
-    dash = Dashboard(_user(ROLE_TEMPLATE_ENGINEER), SCHEMAS, set(), LIGHT)
-    qtbot.addWidget(dash)
-    labels = {b.text() for b in dash.findChildren(QPushButton)}
-    assert "Template Editor" in labels
-    assert "Generation Log" in labels
-    assert "User Admin" not in labels
-    assert "Import Config Pack" not in labels
-
-
-def test_admin_sees_all_admin_buttons(qtbot):
-    dash = Dashboard(_user(ROLE_ADMIN), SCHEMAS, set(), LIGHT)
-    qtbot.addWidget(dash)
-    labels = {b.text() for b in dash.findChildren(QPushButton)}
-    assert {"Template Editor", "User Admin", "Import Config Pack", "Bulk Generate"} <= labels
-
-
-def test_user_admin_button_emits_signal_for_admin(qtbot):
-    dash = Dashboard(_user(ROLE_ADMIN), SCHEMAS, set(), LIGHT)
-    qtbot.addWidget(dash)
-    admin_button = next(b for b in dash.findChildren(QPushButton) if b.text() == "User Admin")
-    with qtbot.waitSignal(dash.userAdminRequested, timeout=1000):
-        admin_button.click()
 
 
 def test_recent_log_panel_renders_entries(qtbot):
@@ -116,6 +83,25 @@ def test_recent_log_panel_renders_entries(qtbot):
     labels_text = " ".join(lbl.text() for lbl in dash.findChildren(QLabel))
     assert "widget" in labels_text
     assert "a.txt" in labels_text
+
+
+def test_recent_log_reopen_button_emits_regenerate_requested(qtbot):
+    entries = [
+        {
+            "created_at": "2026-01-01T00:00:00",
+            "schema_id": "widget",
+            "output_filename": "a.txt",
+            "form_inputs": '{"hostname": "web01"}',
+        }
+    ]
+    dash = Dashboard(_user(ROLE_ADMIN), SCHEMAS, set(), LIGHT, recent_log_entries=entries)
+    qtbot.addWidget(dash)
+    from PySide6.QtWidgets import QPushButton
+
+    reopen_button = next(b for b in dash.findChildren(QPushButton) if b.text() == "Reopen")
+    with qtbot.waitSignal(dash.regenerateRequested, timeout=1000) as blocker:
+        reopen_button.click()
+    assert blocker.args == ["widget", {"hostname": "web01"}]
 
 
 def test_no_recent_entries_means_no_recent_panel(qtbot):

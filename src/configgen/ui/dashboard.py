@@ -9,6 +9,8 @@ can actually generate" can never drift apart.
 
 from __future__ import annotations
 
+import json
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -23,9 +25,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from configgen.core.auth import ROLE_TEMPLATE_ENGINEER, User, visible_schemas
+from configgen.core.auth import User, visible_schemas
 from configgen.core.schema import Schema
 from configgen.ui import theme
+from configgen.ui.widgets import StatusBadge
 
 _TILE_COLUMNS = 3
 
@@ -42,10 +45,13 @@ class TemplateTile(QFrame):
         self.setMinimumHeight(110)
 
         layout = QVBoxLayout(self)
+        header_row = QHBoxLayout()
         title = QLabel(schema.name)
-        title.setStyleSheet("font-weight: 600;")
+        title.setObjectName("headline-md")
         title.setWordWrap(True)
-        layout.addWidget(title)
+        header_row.addWidget(title, stretch=1)
+        header_row.addWidget(StatusBadge(schema.status, palette))
+        layout.addLayout(header_row)
 
         if schema.description:
             desc = QLabel(schema.description)
@@ -53,12 +59,10 @@ class TemplateTile(QFrame):
             desc.setWordWrap(True)
             layout.addWidget(desc)
 
-        status_bit = None if schema.status == "published" else schema.status.upper()
-        meta_bits = [b for b in (schema.group, status_bit) if b]
-        if meta_bits:
-            meta = QLabel(" · ".join(meta_bits))
-            meta.setObjectName("muted")
-            layout.addWidget(meta)
+        if schema.group:
+            group_label = QLabel(schema.group)
+            group_label.setObjectName("muted")
+            layout.addWidget(group_label)
 
         if schema.tags:
             tags_label = QLabel(" ".join(f"#{t}" for t in schema.tags))
@@ -73,12 +77,13 @@ class TemplateTile(QFrame):
 
 
 class Dashboard(QWidget):
+    """Search/filter + tile grid + recent history. Global navigation
+    (Template Editor, User Admin, Bulk Generate, etc.) lives in the
+    persistent Sidebar (§15 GUI redesign) — Dashboard only owns its own
+    content, not app-wide nav."""
+
     templateSelected = Signal(str)
-    bulkGenerateRequested = Signal()
-    templateEditorRequested = Signal()
-    userAdminRequested = Signal()
-    importConfigPackRequested = Signal()
-    generationLogRequested = Signal()
+    regenerateRequested = Signal(str, dict)
 
     def __init__(
         self,
@@ -114,34 +119,10 @@ class Dashboard(QWidget):
 
     def _build_header(self) -> QHBoxLayout:
         header = QHBoxLayout()
-        header.addWidget(QLabel(f"Welcome, {self.user.username} ({self.user.role})"))
+        welcome = QLabel(f"Welcome, {self.user.username} ({self.user.role})")
+        welcome.setObjectName("headline-md")
+        header.addWidget(welcome)
         header.addStretch()
-
-        if self.user.is_admin or self.user.role == ROLE_TEMPLATE_ENGINEER:
-            editor_button = QPushButton("Template Editor")
-            editor_button.setObjectName("secondary")
-            editor_button.clicked.connect(self.templateEditorRequested)
-            header.addWidget(editor_button)
-
-            log_button = QPushButton("Generation Log")
-            log_button.setObjectName("secondary")
-            log_button.clicked.connect(self.generationLogRequested)
-            header.addWidget(log_button)
-
-        if self.user.is_admin:
-            admin_button = QPushButton("User Admin")
-            admin_button.setObjectName("secondary")
-            admin_button.clicked.connect(self.userAdminRequested)
-            header.addWidget(admin_button)
-
-            import_button = QPushButton("Import Config Pack")
-            import_button.setObjectName("secondary")
-            import_button.clicked.connect(self.importConfigPackRequested)
-            header.addWidget(import_button)
-
-        bulk_button = QPushButton("Bulk Generate")
-        bulk_button.clicked.connect(self.bulkGenerateRequested)
-        header.addWidget(bulk_button)
         return header
 
     def _build_filters(self) -> QHBoxLayout:
@@ -150,6 +131,11 @@ class Dashboard(QWidget):
         self.search_input.setPlaceholderText("Search by name or tag…")
         self.search_input.textChanged.connect(self._refresh_tiles)
         filter_row.addWidget(self.search_input, stretch=1)
+
+        self.status_filter = QComboBox()
+        self.status_filter.addItems(["All statuses", "draft", "published", "deprecated"])
+        self.status_filter.currentTextChanged.connect(self._refresh_tiles)
+        filter_row.addWidget(self.status_filter)
 
         self.group_filter = QComboBox()
         self.group_filter.addItem("All groups")
@@ -165,10 +151,21 @@ class Dashboard(QWidget):
         layout = QVBoxLayout(panel)
         layout.addWidget(QLabel("Recent"))
         for entry in entries[:10]:
+            row_layout = QHBoxLayout()
             text = f"{entry['created_at']}  {entry['schema_id']}  →  {entry['output_filename']}"
             row = QLabel(text)
             row.setObjectName("muted")
-            layout.addWidget(row)
+            row_layout.addWidget(row, stretch=1)
+
+            reopen_button = QPushButton("Reopen")
+            reopen_button.setObjectName("secondary")
+            reopen_button.clicked.connect(
+                lambda _checked=False, e=entry: self.regenerateRequested.emit(
+                    e["schema_id"], json.loads(e["form_inputs"])
+                )
+            )
+            row_layout.addWidget(reopen_button)
+            layout.addLayout(row_layout)
         return panel
 
     def visible_schemas(self) -> list[Schema]:
@@ -183,10 +180,13 @@ class Dashboard(QWidget):
 
         query = self.search_input.text().strip().lower()
         group_filter = self.group_filter.currentText()
+        status_filter = self.status_filter.currentText()
 
         filtered = []
         for schema in self.visible_schemas():
             if group_filter != "All groups" and schema.group != group_filter:
+                continue
+            if status_filter != "All statuses" and schema.status != status_filter:
                 continue
             haystack = " ".join([schema.name, schema.id, *schema.tags]).lower()
             if query and query not in haystack:

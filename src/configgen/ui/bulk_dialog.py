@@ -93,6 +93,7 @@ class BulkDialog(QDialog):
 
         self.error_table = QTableWidget(0, 2)
         self.error_table.setHorizontalHeaderLabels(["Row", "Errors"])
+        self.error_table.setAlternatingRowColors(True)
         layout.addWidget(self.error_table, stretch=1)
 
         buttons = QHBoxLayout()

@@ -17,7 +17,7 @@ class AboutDialog(QDialog):
         layout = QVBoxLayout(self)
 
         title = QLabel(APP_NAME)
-        title.setStyleSheet("font-weight: 700; font-size: 18px;")
+        title.setObjectName("headline-lg")
         layout.addWidget(title)
 
         layout.addWidget(QLabel(f"Version {__version__}"))

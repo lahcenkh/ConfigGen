@@ -121,8 +121,8 @@ class JinjaHighlighter(QSyntaxHighlighter):
         self._build_formats()
 
     def _build_formats(self) -> None:
-        self._tag_format = _format(self._palette.accent, bold=True)
-        self._keyword_format = _format(self._palette.danger, bold=True)
+        self._tag_format = _format(self._palette.syntax_string, bold=True)
+        self._keyword_format = _format(self._palette.syntax_keyword, bold=True)
         self._comment_format = _format(self._palette.text_muted, italic=True)
 
     def set_palette(self, palette: Palette) -> None:

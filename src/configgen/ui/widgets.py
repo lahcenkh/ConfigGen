@@ -8,6 +8,7 @@ resolves those and calls back in (`set_options`/`set_completions`).
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from configgen.core.schema import Field
+from configgen.ui import theme
 
 _INT_MIN = -(2**31)
 _INT_MAX = 2**31 - 1
@@ -214,25 +216,77 @@ class LookupFieldWidget(FieldWidget):
 
 # ip / ip_cidr / network / cidr / port all behave like a plain string field
 # at the widget layer — type-specific parsing and validation happens in
-# core/validators.py, not here.
+# core/validators.py, not here. Each still gets a monospace font (address/
+# port digits should align the way they would in a real config file) and a
+# default placeholder shaped like the expected input, used only when the
+# schema doesn't already supply its own `example:`.
+def _mono_line_edit(field: Field, default_placeholder: str) -> QLineEdit:
+    line_edit = _line_edit_with_example(field)
+    line_edit.setFont(QFont(theme.MONO_FONT_FAMILY))
+    if not field.example:
+        line_edit.setPlaceholderText(default_placeholder)
+    return line_edit
+
+
 class IPFieldWidget(StringFieldWidget):
-    pass
+    def _build_input(self) -> QWidget:
+        line_edit = _mono_line_edit(self.field, "000.000.000.000")
+        line_edit.textChanged.connect(self.valueChanged)
+        return line_edit
 
 
 class IPCIDRFieldWidget(StringFieldWidget):
-    pass
+    def _build_input(self) -> QWidget:
+        line_edit = _mono_line_edit(self.field, "000.000.000.000/00")
+        line_edit.textChanged.connect(self.valueChanged)
+        return line_edit
 
 
 class NetworkFieldWidget(StringFieldWidget):
-    pass
+    def _build_input(self) -> QWidget:
+        line_edit = _mono_line_edit(self.field, "000.000.000.000/00")
+        line_edit.textChanged.connect(self.valueChanged)
+        return line_edit
 
 
 class CIDRFieldWidget(StringFieldWidget):
-    pass
+    def _build_input(self) -> QWidget:
+        line_edit = _mono_line_edit(self.field, "000.000.000.000/00")
+        line_edit.textChanged.connect(self.valueChanged)
+        return line_edit
 
 
 class PortFieldWidget(StringFieldWidget):
-    pass
+    def _build_input(self) -> QWidget:
+        line_edit = _mono_line_edit(self.field, "0-65535")
+        line_edit.textChanged.connect(self.valueChanged)
+        return line_edit
+
+
+class StatusBadge(QLabel):
+    """Small uppercase status chip (draft/published/deprecated/...) shared
+    by the dashboard's template tiles and the template editor's header —
+    one place that decides what color a status is, instead of each screen
+    re-deriving it."""
+
+    _COLOR_ATTR = {
+        "published": "success",
+        "deprecated": "warning",
+    }
+
+    def __init__(self, status: str, palette: theme.Palette, parent: QWidget | None = None):
+        super().__init__(status.upper(), parent)
+        self.setObjectName("badge")
+        self.set_status(status, palette)
+
+    def set_status(self, status: str, palette: theme.Palette) -> None:
+        self.setText(status.upper())
+        color = getattr(palette, self._COLOR_ATTR.get(status, "text_muted"))
+        self.setStyleSheet(
+            f"QLabel#badge {{ color: {color}; border: 1px solid {color}; "
+            f"border-radius: {theme.RADIUS_SM}; padding: 1px 6px; "
+            f"font-weight: 700; font-size: 10px; }}"
+        )
 
 
 WIDGET_CLASSES: dict[str, type[FieldWidget]] = {

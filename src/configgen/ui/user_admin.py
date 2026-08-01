@@ -83,6 +83,7 @@ class UserAdminWindow(QDialog):
 
         self.users_table = QTableWidget(0, 3)
         self.users_table.setHorizontalHeaderLabels(["Username", "Role", "Force PW Change"])
+        self.users_table.setAlternatingRowColors(True)
         layout.addWidget(self.users_table)
 
         buttons = QHBoxLayout()
@@ -192,6 +193,7 @@ class UserAdminWindow(QDialog):
         left = QVBoxLayout()
         self.groups_table = QTableWidget(0, 2)
         self.groups_table.setHorizontalHeaderLabels(["Group", "Description"])
+        self.groups_table.setAlternatingRowColors(True)
         self.groups_table.currentItemChanged.connect(lambda *_: self._refresh_group_members())
         left.addWidget(self.groups_table)
 
@@ -206,6 +208,7 @@ class UserAdminWindow(QDialog):
         right.addWidget(QLabel("Members"))
         self.members_table = QTableWidget(0, 1)
         self.members_table.setHorizontalHeaderLabels(["Username"])
+        self.members_table.setAlternatingRowColors(True)
         right.addWidget(self.members_table)
 
         member_buttons = QHBoxLayout()
@@ -298,6 +301,7 @@ class UserAdminWindow(QDialog):
 
         self.keys_table = QTableWidget(0, 4)
         self.keys_table.setHorizontalHeaderLabels(["ID", "Username", "Label", "Status"])
+        self.keys_table.setAlternatingRowColors(True)
         layout.addWidget(self.keys_table)
 
         buttons = QHBoxLayout()

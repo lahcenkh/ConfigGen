@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 from configgen.appinfo import APP_NAME
 from configgen.core.auth import AuthStore
 from configgen.paths import icon_path, schemas_dir, users_db_path
+from configgen.ui import theme
 from configgen.ui.login_window import LoginWindow
 from configgen.ui.main_window import MainWindow
 
@@ -17,6 +18,12 @@ from configgen.ui.main_window import MainWindow
 def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName(APP_NAME)
+    # Dark by default: there's no logged-in user yet to read a per-user
+    # dark-mode preference from (that's keyed by username, §15), and the
+    # login screen is the one surface every user sees regardless of their
+    # eventual preference. MainWindow re-applies the real per-user choice
+    # right after login, overriding this.
+    app.setStyleSheet(theme.stylesheet(theme.DARK))
 
     icon_file = icon_path()
     if icon_file.is_file():
