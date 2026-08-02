@@ -53,6 +53,23 @@ def test_lists_existing_schema_and_loads_it_on_select(qtbot, tmp_path: Path):
     assert "hello {{ name }}" in window.template_editor.toPlainText()
 
 
+def test_expanded_editor_shares_the_document_with_the_original(qtbot, tmp_path: Path, monkeypatch):
+    window, _store = _editor(tmp_path, qtbot)
+    window.schema_list.setCurrentRow(0)
+
+    captured = {}
+
+    def fake_exec(self):
+        captured["editor"] = self.findChild(type(window.schema_editor))
+        captured["editor"].setPlainText("edited from the expanded view")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(QDialog, "exec", fake_exec)
+    window._open_expanded_editor("schema.yaml", window.schema_editor)
+
+    assert window.schema_editor.toPlainText() == "edited from the expanded view"
+
+
 def test_delete_button_hidden_for_template_engineer(qtbot, tmp_path: Path):
     window, _store = _editor(tmp_path, qtbot, role="template_engineer", username="tina")
     assert window.delete_button.isHidden() is True

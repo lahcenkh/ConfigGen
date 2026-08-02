@@ -30,19 +30,25 @@ def main(argv: list[str] | None = None) -> int:
         app.setWindowIcon(QIcon(str(icon_file)))
 
     store = AuthStore(users_db_path())
+    schemas_path = schemas_dir()
 
     # The login loop: LoginWindow itself re-prompts on a wrong password or
     # a locked account (the user never leaves the dialog for that) — this
-    # loop only runs again if the dialog is dismissed without succeeding,
-    # which for a modal exec() means the user closed it, so there's no
-    # session to start.
-    login = LoginWindow(store)
-    if login.exec() != QDialog.DialogCode.Accepted:
-        return 0
+    # loop only runs again if the dialog is dismissed without succeeding
+    # (the user closed it, so there's no session to start) or if the
+    # signed-in user clicks Log Out in the sidebar, which closes MainWindow
+    # (ending this iteration's app.exec()) and sets `logout_requested` so
+    # the loop reopens LoginWindow instead of returning.
+    while True:
+        login = LoginWindow(store)
+        if login.exec() != QDialog.DialogCode.Accepted:
+            return 0
 
-    window = MainWindow(login.authenticated_user, store, schemas_dir())
-    window.show()
-    return app.exec()
+        window = MainWindow(login.authenticated_user, store, schemas_path)
+        window.show()
+        app.exec()
+        if not window.logout_requested:
+            return 0
 
 
 if __name__ == "__main__":

@@ -342,6 +342,12 @@ class TemplateEditorWindow(QDialog):
         self.schema_list = QListWidget()
         self.schema_list.setObjectName("schema-list")
         self.schema_list.setSpacing(2)
+        # Every row is one line of text at the same padding, so this is
+        # safe — and it's the standard Qt fix for a styled item view
+        # (`::item` rules force per-item style recomputation) being slow
+        # to repolish after a stylesheet change: it skips per-item size
+        # negotiation entirely instead of recalculating it item by item.
+        self.schema_list.setUniformItemSizes(True)
         self.schema_list.currentItemChanged.connect(self._on_selection_changed)
         left_layout.addWidget(self.schema_list, stretch=1)
         new_button = QPushButton("New Schema")
@@ -360,7 +366,16 @@ class TemplateEditorWindow(QDialog):
         header_row.addWidget(self.status_badge)
         right_layout.addLayout(header_row)
 
-        right_layout.addWidget(QLabel("schema.yaml"))
+        schema_label_row = QHBoxLayout()
+        schema_label_row.addWidget(QLabel("schema.yaml"), stretch=1)
+        schema_expand_button = QPushButton("Expand")
+        schema_expand_button.setObjectName("secondary")
+        schema_expand_button.clicked.connect(
+            lambda: self._open_expanded_editor("schema.yaml", self.schema_editor)
+        )
+        schema_label_row.addWidget(schema_expand_button)
+        right_layout.addLayout(schema_label_row)
+
         self.schema_editor = QPlainTextEdit()
         self.schema_editor.setFont(QFont(theme.MONO_FONT_FAMILY))
         self.schema_highlighter = YamlHighlighter(self.schema_editor.document(), palette)
@@ -371,6 +386,12 @@ class TemplateEditorWindow(QDialog):
         self.document_combo = QComboBox()
         self.document_combo.currentIndexChanged.connect(self._load_template_text)
         template_row.addWidget(self.document_combo, stretch=1)
+        template_expand_button = QPushButton("Expand")
+        template_expand_button.setObjectName("secondary")
+        template_expand_button.clicked.connect(
+            lambda: self._open_expanded_editor("Template", self.template_editor)
+        )
+        template_row.addWidget(template_expand_button)
         right_layout.addLayout(template_row)
 
         self.template_editor = QPlainTextEdit()
@@ -530,6 +551,29 @@ class TemplateEditorWindow(QDialog):
         self.template_editor.setPlainText(
             template_path.read_text(encoding="utf-8") if template_path.is_file() else ""
         )
+
+    def _open_expanded_editor(self, title: str, editor: QPlainTextEdit) -> None:
+        """A larger, dedicated window over one editor pane — shares the
+        same QTextDocument (Qt supports multiple views of one document
+        natively) rather than copying text back and forth, so edits made
+        here are already saved into `editor` the moment they're typed,
+        with no extra sync step needed when this dialog closes."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.resize(900, 700)
+        layout = QVBoxLayout(dialog)
+
+        expanded = QPlainTextEdit()
+        expanded.setFont(editor.font())
+        expanded.setReadOnly(editor.isReadOnly())
+        expanded.setDocument(editor.document())
+        layout.addWidget(expanded, stretch=1)
+
+        done_button = QPushButton("Done")
+        done_button.clicked.connect(dialog.accept)
+        layout.addWidget(done_button)
+
+        dialog.exec()
 
     # -- new schema ---------------------------------------------------------
 

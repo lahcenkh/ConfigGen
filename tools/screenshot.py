@@ -43,10 +43,24 @@ def _grab(widget, name: str) -> None:
     # at its real size instead of pretending otherwise.
     if widget.maximumSize() != widget.minimumSize():
         widget.resize(1150, 780)
+    # A real run always show()s a window, letting Qt's normal show/resize
+    # cascade activate every nested layout before it's ever painted.
+    # grab()-ing a widget that was never shown skips that for custom
+    # QLayout subclasses (e.g. FlowLayout) nested inside another layout —
+    # they can render with stale/unset geometry. show() + processEvents()
+    # here makes the screenshot match what the real app actually displays.
+    widget.show()
+    # Deeply nested custom layouts (a FlowLayout inside a QScrollArea inside
+    # a QGridLayout, several levels down) can need more than one event-loop
+    # pass to fully resolve every pending LayoutRequest — one
+    # processEvents() call left some of them stale often enough to matter.
+    for _ in range(5):
+        QApplication.processEvents()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     pixmap = widget.grab()
     path = OUT_DIR / f"{name}.png"
     pixmap.save(str(path), "PNG")
+    widget.close()
     print(f"wrote {path}")
 
 
@@ -69,7 +83,17 @@ def main() -> int:
 
         schemas_dir = REPO_ROOT / "examples" / "schemas"
         schemas = [load_schema(p) for p in find_schema_files(schemas_dir)]
-        dashboard = Dashboard(admin, schemas, set(), theme.DARK)
+        for i, schema in enumerate(schemas[:3]):
+            store.record_generation(
+                admin,
+                schema_id=schema.id,
+                schema_version=schema.version,
+                form_inputs={"name": f"demo-{i}"},
+                output_filename=f"{schema.id}_demo-{i}.txt",
+                group_name=None,
+            )
+        recent = store.list_generation_log(admin)
+        dashboard = Dashboard(admin, schemas, set(), theme.DARK, recent_log_entries=recent)
         dashboard.setStyleSheet(theme.stylesheet(theme.DARK))
         _grab(dashboard, "dashboard")
 
@@ -83,8 +107,10 @@ def main() -> int:
             editor.schema_list.setCurrentRow(0)
         _grab(editor, "template_editor")
 
-        user_admin = UserAdminWindow(store, admin)
+        store.create_group("NetworkTeam")
+        user_admin = UserAdminWindow(store, admin, schemas_dir)
         user_admin.setStyleSheet(theme.stylesheet(theme.DARK))
+        user_admin.groups_table.selectRow(0)
         _grab(user_admin, "user_admin")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

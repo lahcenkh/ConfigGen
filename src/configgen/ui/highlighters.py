@@ -5,21 +5,35 @@
 `ConfigHighlighter` targets rendered output: a config can be IOS, JunOS, a
 shell script, or anything else a template author writes, so there's no
 single fixed grammar to target — just the ConfigGen header line, comment
-lines, quoted strings, and IPv4 addresses. `YamlHighlighter` and
-`JinjaHighlighter` target the two source files a Template Engineer
+lines, quoted strings, IPv4 addresses, and bare numbers. `YamlHighlighter`
+and `JinjaHighlighter` target the two source files a Template Engineer
 actually edits.
+
+Word-based highlighting (`interface`, `no`/`shutdown`/`reboot`/...) isn't
+hardcoded here — those are just the *default* entries in
+`highlight_rules.load_custom_rules()`, editable/re-colorable/removable
+through `HighlightRulesDialog` like anything else a user adds. Only
+patterns that aren't a fixed word (IPs, numbers) live in code, since
+there's no sensible way to "type" those as a custom rule. Every custom
+rule (default or user-added) is applied last in every highlighter here,
+so it always wins over a built-in format for the same span.
 """
 
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QTextDocument
 
+from configgen.ui.highlight_rules import HighlightRule, load_custom_rules
 from configgen.ui.theme import Palette
 
 _COMMENT_PREFIXES = ("!", "#", "//", ";")
 _IPV4_RE = QRegularExpression(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b")
 _STRING_RE = QRegularExpression(r"\"[^\"]*\"|'[^']*'")
+_NUMBER_RE = QRegularExpression(r"\b\d+\b")
+_CASE_INSENSITIVE = QRegularExpression.PatternOption.CaseInsensitiveOption
 
 
 def _format(color: str, *, bold: bool = False, italic: bool = False) -> QTextCharFormat:
@@ -30,21 +44,51 @@ def _format(color: str, *, bold: bool = False, italic: bool = False) -> QTextCha
     return fmt
 
 
+_CustomFormats = list[tuple[QRegularExpression, QTextCharFormat]]
+
+
+def _custom_rule_formats(rules: list[HighlightRule]) -> _CustomFormats:
+    """Each rule's word is matched literally (escaped), not as a regex —
+    these are meant to be typed by anyone, not just people comfortable
+    writing a pattern — case-insensitively, on word boundaries."""
+    compiled = []
+    for rule in rules:
+        if not rule.word.strip():
+            continue
+        pattern = QRegularExpression(r"\b" + re.escape(rule.word) + r"\b", _CASE_INSENSITIVE)
+        compiled.append((pattern, _format(rule.color, bold=rule.bold)))
+    return compiled
+
+
+def _apply(text: str, rules: _CustomFormats, setter) -> None:
+    for pattern, fmt in rules:
+        match_iter = pattern.globalMatch(text)
+        while match_iter.hasNext():
+            match = match_iter.next()
+            setter(match.capturedStart(), match.capturedLength(), fmt)
+
+
 class ConfigHighlighter(QSyntaxHighlighter):
     def __init__(self, document: QTextDocument, palette: Palette):
         super().__init__(document)
         self._palette = palette
+        self._custom_rules = _custom_rule_formats(load_custom_rules())
         self._build_formats()
 
     def _build_formats(self) -> None:
         self._header_format = _format(self._palette.accent, bold=True)
         self._comment_format = _format(self._palette.text_muted, italic=True)
         self._string_format = _format(self._palette.success)
-        self._ip_format = _format(self._palette.danger)
+        self._ip_format = _format(self._palette.warning)
+        self._number_format = _format(self._palette.warning)
 
     def set_palette(self, palette: Palette) -> None:
         self._palette = palette
         self._build_formats()
+        self.rehighlight()
+
+    def refresh_custom_rules(self) -> None:
+        self._custom_rules = _custom_rule_formats(load_custom_rules())
         self.rehighlight()
 
     def highlightBlock(self, text: str) -> None:
@@ -55,11 +99,19 @@ class ConfigHighlighter(QSyntaxHighlighter):
             self.setFormat(0, len(text), self._comment_format)
             return
 
-        for pattern, fmt in ((_STRING_RE, self._string_format), (_IPV4_RE, self._ip_format)):
+        # Numbers first, IPs second — an IP's own digits get re-covered by
+        # the IP format, which is what should win for those characters.
+        for pattern, fmt in (
+            (_STRING_RE, self._string_format),
+            (_NUMBER_RE, self._number_format),
+            (_IPV4_RE, self._ip_format),
+        ):
             match_iter = pattern.globalMatch(text)
             while match_iter.hasNext():
                 match = match_iter.next()
                 self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
+
+        _apply(text, self._custom_rules, self.setFormat)
 
 
 _YAML_COMMENT_RE = QRegularExpression(r"#.*$")
@@ -118,30 +170,57 @@ class JinjaHighlighter(QSyntaxHighlighter):
     def __init__(self, document: QTextDocument, palette: Palette):
         super().__init__(document)
         self._palette = palette
+        self._custom_rules = _custom_rule_formats(load_custom_rules())
         self._build_formats()
 
     def _build_formats(self) -> None:
         self._tag_format = _format(self._palette.syntax_string, bold=True)
         self._keyword_format = _format(self._palette.syntax_keyword, bold=True)
         self._comment_format = _format(self._palette.text_muted, italic=True)
+        self._ip_format = _format(self._palette.warning)
+        self._number_format = _format(self._palette.warning)
 
     def set_palette(self, palette: Palette) -> None:
         self._palette = palette
         self._build_formats()
         self.rehighlight()
 
+    def refresh_custom_rules(self) -> None:
+        self._custom_rules = _custom_rule_formats(load_custom_rules())
+        self.rehighlight()
+
     def highlightBlock(self, text: str) -> None:
+        # Numbers/IPs in the template's own literal text (e.g. "no shutdown"
+        # sitting next to "{{ vlan }}") get the same treatment
+        # ConfigHighlighter gives the rendered output — a template author
+        # sees it here too, not only in the preview pane. Tags/comments
+        # below still override their own span (e.g. a number inside
+        # "{{ 100 }}" stays tag-colored, not number-colored).
+        for pattern, fmt in ((_NUMBER_RE, self._number_format), (_IPV4_RE, self._ip_format)):
+            match_iter = pattern.globalMatch(text)
+            while match_iter.hasNext():
+                match = match_iter.next()
+                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
+
         tag_iter = _JINJA_TAG_RE.globalMatch(text)
         while tag_iter.hasNext():
             match = tag_iter.next()
-            self.setFormat(match.capturedStart(), match.capturedLength(), self._tag_format)
+            start, length = match.capturedStart(), match.capturedLength()
+            self.setFormat(start, length, self._tag_format)
 
-        keyword_iter = _JINJA_KEYWORD_RE.globalMatch(text)
-        while keyword_iter.hasNext():
-            match = keyword_iter.next()
-            self.setFormat(match.capturedStart(), match.capturedLength(), self._keyword_format)
+            # Keywords only within this tag's own span — matching against
+            # the whole line would also light up "if"/"in"/"or" etc. that
+            # happen to appear in plain text outside any {{ }}/{% %}.
+            keyword_iter = _JINJA_KEYWORD_RE.globalMatch(text[start : start + length])
+            while keyword_iter.hasNext():
+                keyword = keyword_iter.next()
+                self.setFormat(
+                    start + keyword.capturedStart(), keyword.capturedLength(), self._keyword_format
+                )
 
         comment_iter = _JINJA_COMMENT_RE.globalMatch(text)
         while comment_iter.hasNext():
             match = comment_iter.next()
             self.setFormat(match.capturedStart(), match.capturedLength(), self._comment_format)
+
+        _apply(text, self._custom_rules, self.setFormat)

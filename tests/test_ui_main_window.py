@@ -89,6 +89,28 @@ def test_ctrl_n_returns_to_dashboard(qtbot, tmp_path: Path, monkeypatch):
     assert window.stack.currentWidget() is window.dashboard
 
 
+def test_logout_sets_the_flag_and_closes_the_window(qtbot, tmp_path: Path, monkeypatch):
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.show()
+    assert window.logout_requested is False
+
+    window._logout()
+
+    assert window.logout_requested is True
+    assert window.isVisible() is False
+
+
+def test_logout_button_triggers_main_window_logout(qtbot, tmp_path: Path, monkeypatch):
+    from PySide6.QtWidgets import QPushButton
+
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    button = next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "Log Out")
+    button.click()
+    assert window.logout_requested is True
+
+
 # -- role-based click-through (the phase's own acceptance criterion) ---------
 
 
@@ -243,7 +265,7 @@ def test_dark_mode_toggle_persists_and_restyles(qtbot, tmp_path: Path, monkeypat
 
     window._on_dark_mode_toggled(True)
     assert window.dark is True
-    assert "background-color: #131313" in window.styleSheet()
+    assert "background-color: #0a0c0b" in window.styleSheet()
 
     # A fresh window for the same user picks up the persisted preference.
     window2 = MainWindow(window.user, window.store, window.schemas_dir, check_for_updates=False)
@@ -259,6 +281,34 @@ def test_open_about_shows_the_about_dialog(qtbot, tmp_path: Path, monkeypatch):
     qtbot.addWidget(window)
     monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
     window._open_about()  # should not raise
+
+
+def test_open_highlight_rules_shows_the_dialog(qtbot, tmp_path: Path, monkeypatch):
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    window._open_highlight_rules()  # should not raise
+
+
+def test_open_highlight_rules_refreshes_the_open_generator_view(qtbot, tmp_path: Path, monkeypatch):
+    from configgen.ui.highlight_rules import DEFAULT_RULES, HighlightRule, save_custom_rules
+
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window._open_generator("widget_server")
+    view = window.generator_view
+    view.form.set_raw_values({"hostname": "web01", "note": "hi"})
+    window._preview(view)
+    assert len(view._highlighters[0]._custom_rules) == len(DEFAULT_RULES)  # seeded defaults
+
+    def fake_exec(self):
+        save_custom_rules([HighlightRule(word="web01", color="#ff00ff")])
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(QDialog, "exec", fake_exec)
+    window._open_highlight_rules()
+
+    assert len(view._highlighters[0]._custom_rules) == 1
 
 
 def test_open_bulk_dialog_offers_visible_schemas_and_refreshes_dashboard(
@@ -293,6 +343,26 @@ def test_open_template_editor_and_refresh_picks_up_new_schema(qtbot, tmp_path: P
 
     assert len(window.schemas) == 3
     assert window.stack.currentWidget() is window.dashboard
+
+
+def test_open_new_template_prompts_and_creates_schema(qtbot, tmp_path: Path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    assert len(window.schemas) == 2
+
+    monkeypatch.setattr(
+        QInputDialog, "getText", staticmethod(lambda *a, **k: ("Brand New Schema", True))
+    )
+    monkeypatch.setattr(
+        "configgen.ui.template_editor.TemplateEditorWindow.exec",
+        lambda self: QDialog.DialogCode.Accepted,
+    )
+    window._open_new_template()
+
+    assert len(window.schemas) == 3
+    assert {s.id for s in window.schemas} >= {"brand_new_schema"}
 
 
 def test_open_user_admin_refreshes_groups_and_dashboard(qtbot, tmp_path: Path, monkeypatch):

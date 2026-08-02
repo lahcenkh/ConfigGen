@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QPushButton
 
 from configgen.core.auth import ROLE_ADMIN, ROLE_CONFIG_ENGINEER, ROLE_TEMPLATE_ENGINEER, User
 from configgen.ui.sidebar import Sidebar
-from configgen.ui.theme import LIGHT
+from configgen.ui.theme import DARK, LIGHT
 
 
 def _user(role: str, username: str = "u") -> User:
@@ -80,6 +80,33 @@ def test_about_button_emits_signal(qtbot):
     button = next(b for b in sidebar.findChildren(QPushButton) if b.text() == "About")
     with qtbot.waitSignal(sidebar.aboutRequested, timeout=1000):
         button.click()
+
+
+def test_highlight_rules_button_emits_signal(qtbot):
+    sidebar = Sidebar(_user(ROLE_ADMIN), LIGHT, dark=False, auto_update_check=True)
+    qtbot.addWidget(sidebar)
+    button = next(b for b in sidebar.findChildren(QPushButton) if b.text() == "Highlight Rules")
+    with qtbot.waitSignal(sidebar.highlightRulesRequested, timeout=1000):
+        button.click()
+
+
+def test_logout_button_emits_signal(qtbot):
+    sidebar = Sidebar(_user(ROLE_ADMIN), LIGHT, dark=False, auto_update_check=True)
+    qtbot.addWidget(sidebar)
+    button = next(b for b in sidebar.findChildren(QPushButton) if b.text() == "Log Out")
+    with qtbot.waitSignal(sidebar.logoutRequested, timeout=1000):
+        button.click()
+
+
+def test_refresh_palette_updates_stale_nav_icons(qtbot):
+    sidebar = Sidebar(_user(ROLE_ADMIN), LIGHT, dark=False, auto_update_check=True)
+    qtbot.addWidget(sidebar)
+    home_button = sidebar._nav_buttons["home"]
+    light_icon = home_button.icon()
+
+    sidebar.refresh_palette(DARK)
+
+    assert home_button.icon().cacheKey() != light_icon.cacheKey()
 
 
 def test_dark_mode_checkbox_reflects_initial_state_and_emits_on_toggle(qtbot):

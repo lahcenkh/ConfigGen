@@ -58,6 +58,7 @@ from configgen.ui.config_pack_import import ImportConfigPackDialog
 from configgen.ui.dashboard import Dashboard
 from configgen.ui.form_builder import FormBuilder
 from configgen.ui.generation_log import GenerationLogDialog
+from configgen.ui.highlight_rules_dialog import HighlightRulesDialog
 from configgen.ui.highlighters import ConfigHighlighter
 from configgen.ui.settings import auto_update_check_enabled, set_auto_update_check_enabled
 from configgen.ui.sidebar import Sidebar
@@ -185,6 +186,10 @@ class GeneratorView(QWidget):
         for highlighter in self._highlighters:
             highlighter.set_palette(palette)
 
+    def refresh_custom_rules(self) -> None:
+        for highlighter in self._highlighters:
+            highlighter.refresh_custom_rules()
+
     def _style_validation_badge(self, color: str) -> None:
         self.validation_badge.setStyleSheet(
             f"QLabel#badge {{ color: {color}; border: 1px solid {color}; "
@@ -224,9 +229,11 @@ class MainWindow(QMainWindow):
         self.palette = theme.palette_for(self.dark)
         self.generator_view: GeneratorView | None = None
         self.update_worker: UpdateCheckWorker | None = None
+        self.logout_requested = False
 
         self.setWindowTitle(f"{APP_NAME} v{__version__} — {user.username}")
-        self.resize(1150, 780)
+        self.resize(1366, 780)
+        self.setMinimumSize(1024, 700)
 
         self.user_groups = store.groups_for_user(user.username)
         self.schemas = self._load_schemas()
@@ -279,6 +286,8 @@ class MainWindow(QMainWindow):
         )
         dashboard.templateSelected.connect(self._open_generator)
         dashboard.regenerateRequested.connect(self._regenerate_from_log)
+        dashboard.newTemplateRequested.connect(self._open_new_template)
+        dashboard.viewAllActivityRequested.connect(self._open_generation_log)
         return dashboard
 
     def _refresh_dashboard(self) -> None:
@@ -309,8 +318,10 @@ class MainWindow(QMainWindow):
         sidebar.bulkGenerateRequested.connect(self._open_bulk_dialog)
         sidebar.generationLogRequested.connect(self._open_generation_log)
         sidebar.aboutRequested.connect(self._open_about)
+        sidebar.highlightRulesRequested.connect(self._open_highlight_rules)
         sidebar.darkModeToggled.connect(self._on_dark_mode_toggled)
         sidebar.autoUpdateToggled.connect(set_auto_update_check_enabled)
+        sidebar.logoutRequested.connect(self._logout)
         return sidebar
 
     def _build_shortcuts(self) -> None:
@@ -337,6 +348,8 @@ class MainWindow(QMainWindow):
         self.palette = theme.palette_for(checked)
         theme.save_dark_mode(self.user.username, checked)
         self._apply_theme()
+        self.sidebar.refresh_palette(self.palette)
+        self.dashboard.refresh_palette(self.palette)
         if self.generator_view is not None:
             self.generator_view.refresh_palette(self.palette)
 
@@ -350,8 +363,24 @@ class MainWindow(QMainWindow):
     def _back_to_dashboard(self) -> None:
         self.stack.setCurrentWidget(self.dashboard)
 
+    def _logout(self) -> None:
+        # app.py's login loop checks this flag once this window's closed
+        # (which ends its app.exec() call) to decide whether to reopen
+        # LoginWindow instead of exiting the process.
+        self.logout_requested = True
+        self.close()
+
     def _open_about(self) -> None:
         AboutDialog(self).exec()
+
+    def _open_highlight_rules(self) -> None:
+        HighlightRulesDialog(self).exec()
+        # Unlike Template Editor (modal), a GeneratorView already showing a
+        # rendered preview is still on screen when this dialog closes — so
+        # its highlighting can actually reflect a just-saved rule right
+        # away instead of only applying the next time something's rendered.
+        if self.generator_view is not None:
+            self.generator_view.refresh_custom_rules()
 
     def _open_bulk_dialog(self) -> None:
         schema_paths = {s.id: s.source_path for s in self.schemas if s.source_path}
@@ -366,8 +395,17 @@ class MainWindow(QMainWindow):
         dialog.exec()
         self._refresh_dashboard()
 
+    def _open_new_template(self) -> None:
+        """Dashboard's "+ New Template" header action — same dialog as
+        "Template Editor", just fast-forwarded straight into its existing
+        new-schema name prompt instead of landing on the schema list."""
+        dialog = TemplateEditorWindow(self.user, self.store, self.schemas_dir, self.palette, self)
+        dialog._new_schema()
+        dialog.exec()
+        self._refresh_dashboard()
+
     def _open_user_admin(self) -> None:
-        dialog = UserAdminWindow(self.store, self.user, self)
+        dialog = UserAdminWindow(self.store, self.user, self.schemas_dir, self)
         dialog.exec()
         self.user_groups = self.store.groups_for_user(self.user.username)
         self._refresh_dashboard()

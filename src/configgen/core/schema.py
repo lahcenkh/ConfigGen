@@ -6,6 +6,7 @@ surface as structured errors, not attribute errors deep in the form builder.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
@@ -161,3 +162,29 @@ def find_schema_files(schemas_dir: str | Path) -> list[Path]:
     if not schemas_dir.is_dir():
         return []
     return sorted({*schemas_dir.glob("*.yaml"), *schemas_dir.glob("*.yml")})
+
+
+_GROUP_LINE_RE = re.compile(r"(?m)^group:\s*.*$")
+
+
+def set_group_line(text: str, new_group: str | None) -> str:
+    """Rewrites (or removes) a schema.yaml's `group:` key as plain text —
+    preserves comments/formatting/ordering exactly, unlike a full
+    yaml.safe_load + yaml.dump round trip would. `None` means ungrouped
+    (visible to everyone, per `auth.visible_schemas`), so the line is
+    dropped entirely rather than left blank."""
+    if new_group is None:
+        return re.sub(r"(?m)^group:\s*.*\n?", "", text, count=1)
+    new_text, count = _GROUP_LINE_RE.subn(f"group: {new_group}", text, count=1)
+    if count == 0:
+        new_text = text.rstrip("\n") + f"\ngroup: {new_group}\n"
+    return new_text
+
+
+def set_schema_group(path: str | Path, new_group: str | None) -> None:
+    """Convenience wrapper for callers that just want to flip a schema's
+    access group on disk — the User Admin group-access checklist and the
+    Template Editor's own schema.yaml buffer both need this, so it lives
+    here rather than duplicated in each."""
+    path = Path(path)
+    path.write_text(set_group_line(path.read_text(encoding="utf-8"), new_group), encoding="utf-8")

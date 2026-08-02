@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from configgen.core.auth import ROLE_ADMIN, User
+from configgen.core.auth import ROLE_ADMIN, ROLE_CONFIG_ENGINEER, ROLE_TEMPLATE_ENGINEER, User
 from configgen.core.schema import find_schema_files, load_schema
-from configgen.ui.dashboard import Dashboard
-from configgen.ui.theme import LIGHT
+from configgen.ui.dashboard import Dashboard, TemplateTile, _group_by_day
+from configgen.ui.theme import DARK, LIGHT
 
 EXAMPLES_ROOT = Path(__file__).resolve().parents[1] / "examples"
 SCHEMAS = [load_schema(p) for p in find_schema_files(EXAMPLES_ROOT / "schemas")]
@@ -20,6 +20,24 @@ def _tile_schema_ids(dash: Dashboard) -> set[str]:
         if hasattr(widget, "schema"):
             ids.add(widget.schema.id)
     return ids
+
+
+def test_refresh_palette_restyles_every_tiles_stale_inline_stylesheet(qtbot):
+    dash = Dashboard(_user(ROLE_ADMIN), SCHEMAS, set(), LIGHT)
+    qtbot.addWidget(dash)
+    tile = next(
+        dash.tiles_layout.itemAt(i).widget()
+        for i in range(dash.tiles_layout.count())
+        if isinstance(dash.tiles_layout.itemAt(i).widget(), TemplateTile)
+    )
+    light_style = tile.styleSheet()
+    light_badge_style = tile._status_badge.styleSheet()
+
+    dash.refresh_palette(DARK)
+
+    assert tile.styleSheet() != light_style
+    assert tile._status_badge.styleSheet() != light_badge_style
+    assert DARK.surface_container in tile.styleSheet()
 
 
 def test_admin_sees_all_schemas_as_tiles(qtbot):
@@ -104,9 +122,54 @@ def test_recent_log_reopen_button_emits_regenerate_requested(qtbot):
     assert blocker.args == ["widget", {"hostname": "web01"}]
 
 
-def test_no_recent_entries_means_no_recent_panel(qtbot):
+def test_no_recent_entries_shows_empty_state_in_activity_rail(qtbot):
     dash = Dashboard(_user(ROLE_ADMIN), SCHEMAS, set(), LIGHT, recent_log_entries=None)
     qtbot.addWidget(dash)
-    from PySide6.QtWidgets import QFrame
+    from PySide6.QtWidgets import QFrame, QLabel
 
-    assert not any(f.objectName() == "card" for f in dash.findChildren(QFrame))
+    # The rail panel is always present (fixed 2-column layout) — only its
+    # content differs when there's no history yet.
+    assert any(f.objectName() == "panel" for f in dash.findChildren(QFrame))
+    labels_text = " ".join(lbl.text() for lbl in dash.findChildren(QLabel))
+    assert "No generations yet" in labels_text
+
+
+def test_new_template_button_visible_for_template_engineer(qtbot):
+    dash = Dashboard(_user(ROLE_TEMPLATE_ENGINEER), SCHEMAS, set(), LIGHT)
+    qtbot.addWidget(dash)
+    from PySide6.QtWidgets import QPushButton
+
+    assert any(b.text() == "+ New Template" for b in dash.findChildren(QPushButton))
+
+
+def test_new_template_button_hidden_for_config_engineer(qtbot):
+    dash = Dashboard(_user(ROLE_CONFIG_ENGINEER), SCHEMAS, set(), LIGHT)
+    qtbot.addWidget(dash)
+    from PySide6.QtWidgets import QPushButton
+
+    assert not any(b.text() == "+ New Template" for b in dash.findChildren(QPushButton))
+
+
+def test_new_template_button_emits_signal(qtbot):
+    dash = Dashboard(_user(ROLE_ADMIN), SCHEMAS, set(), LIGHT)
+    qtbot.addWidget(dash)
+    from PySide6.QtWidgets import QPushButton
+
+    button = next(b for b in dash.findChildren(QPushButton) if b.text() == "+ New Template")
+    with qtbot.waitSignal(dash.newTemplateRequested, timeout=1000):
+        button.click()
+
+
+def test_group_by_day_buckets_today_and_labels_it():
+    from datetime import datetime
+
+    today_iso = datetime.now().isoformat()
+    entries = [
+        {"created_at": today_iso, "schema_id": "a"},
+        {"created_at": today_iso, "schema_id": "b"},
+    ]
+    groups = _group_by_day(entries)
+    assert len(groups) == 1
+    label, day_entries = groups[0]
+    assert label.startswith("TODAY")
+    assert len(day_entries) == 2

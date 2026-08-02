@@ -1,11 +1,15 @@
 """Design tokens + stylesheets + dark mode (§15 of the build plan).
 
-"Flat Industrial Precision": a dark-first, softly-rounded, 1px-border
-visual language built for network/IT engineers — depth comes from tonal
-layering (surface_container_* ramp) and 1px borders, never shadows.
-Light mode follows the same structural rules with an independently
-derived palette (the corner radii and border-first depth still apply;
-the hues differ).
+"Mono/Mint": a cool-neutral, near-zero-chroma dark-first visual language
+with a single accent (mint) — depth comes from tonal layering
+(surface_container_* ramp) and 1px borders, never shadows. Light mode
+follows the same structural rules with an independently derived palette.
+
+Semantic state colors (danger/success/warning) are kept as real hues —
+the design brief's "no second hue" rule is about decorative/branding
+accent usage, not about being able to show a login error or a validation
+failure, which still need to read as unambiguously "wrong" regardless of
+the neutral+mint palette around them.
 
 Per-group accent colours and tile backgrounds are data a group/schema
 record supplies (a hex string), never a hardcoded per-group branch here —
@@ -33,11 +37,17 @@ class Palette:
     surface_container_highest: str
     text: str
     text_muted: str
+    text_tertiary: str
+    text_faint: str
     border: str
     border_strong: str
+    border_hover: str
     accent: str
+    accent_hover: str
     accent_fill: str
     accent_fill_text: str
+    accent_tint_bg: str
+    accent_tint_border: str
     danger: str
     danger_container: str
     success: str
@@ -48,59 +58,72 @@ class Palette:
 
 
 LIGHT = Palette(
-    background="#f5f6f7",
+    background="#e6eae8",
     surface="#ffffff",
     surface_container_lowest="#ffffff",
-    surface_container_low="#f0f1f3",
-    surface_container="#e8eaed",
-    surface_container_high="#dfe2e6",
-    surface_container_highest="#d3d7dc",
-    text="#131313",
-    text_muted="#4b5563",
-    border="#d1d5db",
-    border_strong="#8a919e",
-    accent="#0060ab",
-    accent_fill="#0078d4",
+    surface_container_low="#ffffff",
+    surface_container="#ffffff",
+    surface_container_high="#eef1ef",
+    surface_container_highest="#dfe4e1",
+    text="#121512",
+    text_muted="#5b6560",
+    text_tertiary="#77827c",
+    text_faint="#9aa39e",
+    border="#d3d9d6",
+    border_strong="#bcc4c0",
+    border_hover="#9aa39e",
+    accent="#1f8f5f",
+    accent_hover="#177349",
+    accent_fill="#1f8f5f",
     accent_fill_text="#ffffff",
+    accent_tint_bg="#dbf0e6",
+    accent_tint_border="#a6ddc0",
     danger="#dc2626",
     danger_container="#fee2e2",
     success="#059669",
     warning="#d97706",
-    mono_text="#2563eb",
-    syntax_keyword="#bc5b00",
-    syntax_string="#0060ab",
+    mono_text="#121512",
+    syntax_keyword="#1f8f5f",
+    syntax_string="#121512",
 )
 
 DARK = Palette(
-    background="#131313",
-    surface="#131313",
-    surface_container_lowest="#0e0e0e",
-    surface_container_low="#1b1b1c",
-    surface_container="#202020",
-    surface_container_high="#2a2a2a",
-    surface_container_highest="#353535",
-    text="#e5e2e1",
-    text_muted="#c0c7d4",
-    border="#404752",
-    border_strong="#8a919e",
-    accent="#a3c9ff",
-    accent_fill="#0078d4",
-    accent_fill_text="#ffffff",
+    background="#0a0c0b",
+    surface="#0d100f",
+    surface_container_lowest="#101413",
+    surface_container_low="#0d100f",
+    surface_container="#101413",
+    surface_container_high="#121716",
+    surface_container_highest="#171d1b",
+    text="#e6ebe8",
+    text_muted="#8b968f",
+    text_tertiary="#6f7a75",
+    text_faint="#4e5a55",
+    border="#171d1b",
+    border_strong="#1c2320",
+    border_hover="#2c3733",
+    accent="#5fd6a4",
+    accent_hover="#7ce0b5",
+    accent_fill="#5fd6a4",
+    accent_fill_text="#06120d",
+    accent_tint_bg="#152420",
+    accent_tint_border="#1f3630",
     danger="#ffb4ab",
     danger_container="#93000a",
     success="#10b981",
     warning="#f59e0b",
-    mono_text="#60a5fa",
-    syntax_keyword="#ffb689",
-    syntax_string="#a3c9ff",
+    mono_text="#e6ebe8",
+    syntax_keyword="#5fd6a4",
+    syntax_string="#e6ebe8",
 )
 
-FONT_FAMILY = '"Inter", "Segoe UI", Arial, sans-serif'
-MONO_FONT_FAMILY = '"JetBrains Mono", "Cascadia Mono", "Consolas", monospace'
+FONT_FAMILY = '"IBM Plex Sans", "Segoe UI", Arial, sans-serif'
+MONO_FONT_FAMILY = '"IBM Plex Mono", "Cascadia Mono", "Consolas", monospace'
 SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24}
-SIDEBAR_WIDTH = 240
-RADIUS_SM = "4px"
-RADIUS_MD = "8px"
+SIDEBAR_WIDTH = 212
+RADIUS_SM = "5px"  # chips
+RADIUS_MD = "7px"  # controls, rows
+RADIUS_LG = "9px"  # cards, panels
 
 
 def palette_for(dark: bool) -> Palette:
@@ -112,10 +135,9 @@ def stylesheet(palette: Palette) -> str:
     tile's accent colour, a field's error border) layers on top via that
     widget's own setStyleSheet — never by editing this.
 
-    Corners are softly rounded throughout (`RADIUS_SM` for controls,
-    `RADIUS_MD` for cards/tiles/buttons) — depth still comes from 1px
-    borders and tonal layering, never shadows, but the shape language is
-    rounded, not sharp.
+    Borders do the work shadows normally would: every surface is flat,
+    depth comes only from the surface_container_* tonal ramp and 1px
+    borders. Radii follow the three-tier scale (`RADIUS_SM`/`MD`/`LG`).
     """
     return f"""
     QWidget {{
@@ -131,15 +153,18 @@ def stylesheet(palette: Palette) -> str:
         background-color: transparent;
     }}
     QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit {{
-        background-color: {palette.surface_container_lowest};
+        background-color: {palette.surface_container};
         color: {palette.text};
-        border: 1px solid {palette.border};
-        border-radius: {RADIUS_SM};
+        border: 1px solid {palette.border_strong};
+        border-radius: {RADIUS_MD};
         padding: 4px 6px;
     }}
     QLineEdit, QComboBox, QSpinBox {{
         min-height: 22px;
-        padding: 6px 10px;
+        padding: 4px 10px;
+    }}
+    QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QPlainTextEdit:hover {{
+        border: 1px solid {palette.border_hover};
     }}
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus {{
         border: 1px solid {palette.accent};
@@ -152,25 +177,47 @@ def stylesheet(palette: Palette) -> str:
         background-color: {palette.accent_fill};
         color: {palette.accent_fill_text};
         border: none;
-        border-radius: {RADIUS_SM};
-        padding: 6px 14px;
-        font-weight: 700;
+        border-radius: {RADIUS_MD};
+        padding: 5px 14px;
+        min-height: 22px;
+        font-weight: 600;
+    }}
+    QPushButton:hover {{
+        background-color: {palette.accent_hover};
     }}
     QPushButton:disabled {{
-        background-color: {palette.border};
-        color: {palette.text_muted};
+        background-color: {palette.surface_container_high};
+        color: {palette.text_faint};
     }}
     QPushButton#secondary {{
         background-color: transparent;
         color: {palette.text};
         border: 1px solid {palette.border_strong};
-        border-radius: {RADIUS_SM};
+        border-radius: {RADIUS_MD};
+    }}
+    QPushButton#secondary:hover {{
+        border: 1px solid {palette.border_hover};
+        background-color: {palette.surface_container_high};
     }}
     QPushButton#danger {{
         background-color: transparent;
         color: {palette.danger};
         border: 1px solid {palette.danger};
-        border-radius: {RADIUS_SM};
+        border-radius: {RADIUS_MD};
+    }}
+    QPushButton#ghost-accent {{
+        background-color: transparent;
+        color: {palette.accent};
+        border: 1px solid {palette.accent_tint_border};
+        border-radius: {RADIUS_MD};
+        padding: 2px 10px;
+        min-height: 18px;
+        font-weight: 600;
+    }}
+    QPushButton#ghost-accent:hover {{
+        background-color: {palette.accent_fill};
+        color: {palette.accent_fill_text};
+        border: 1px solid {palette.accent_fill};
     }}
     QWidget#sidebar {{
         background-color: {palette.surface_container_low};
@@ -180,14 +227,22 @@ def stylesheet(palette: Palette) -> str:
         background-color: transparent;
         color: {palette.text_muted};
         border: none;
-        border-radius: {RADIUS_SM};
+        border-left: 2px solid transparent;
+        border-radius: {RADIUS_MD};
         text-align: left;
-        padding: 8px 16px;
+        padding: 8px 10px;
+        min-height: 20px;
         font-weight: 400;
     }}
     QPushButton#nav-item:hover {{
-        background-color: {palette.surface_container_highest};
+        background-color: {palette.surface_container_high};
         color: {palette.text};
+    }}
+    QPushButton#nav-item[active="true"] {{
+        background-color: {palette.accent_tint_bg};
+        color: {palette.text};
+        border-left: 2px solid {palette.accent};
+        font-weight: 600;
     }}
     QLabel#error {{
         color: {palette.danger};
@@ -195,7 +250,7 @@ def stylesheet(palette: Palette) -> str:
     QFrame#alert-danger {{
         background-color: {palette.danger_container};
         border: 1px solid {palette.danger};
-        border-radius: {RADIUS_SM};
+        border-radius: {RADIUS_MD};
     }}
     QFrame#alert-danger QLabel#error {{
         color: {palette.text};
@@ -203,17 +258,23 @@ def stylesheet(palette: Palette) -> str:
     QLabel#muted {{
         color: {palette.text_muted};
     }}
+    QLabel#tertiary {{
+        color: {palette.text_tertiary};
+    }}
+    QLabel#faint {{
+        color: {palette.text_faint};
+    }}
     QLabel#headline-lg {{
-        font-size: 20px;
-        font-weight: 700;
+        font-size: 18px;
+        font-weight: 600;
     }}
     QLabel#headline-md {{
-        font-size: 16px;
+        font-size: 14px;
         font-weight: 600;
     }}
     QLabel#label-sm {{
         font-size: 10px;
-        font-weight: 700;
+        font-weight: 600;
         color: {palette.text_muted};
     }}
     QFrame#divider {{
@@ -221,49 +282,68 @@ def stylesheet(palette: Palette) -> str:
         max-height: 1px;
         border: none;
     }}
-    QFrame#tile {{
-        background-color: {palette.surface_container_low};
+    QFrame#tile, QFrame#card {{
+        background-color: {palette.surface_container};
         border: 1px solid {palette.border};
+        border-radius: {RADIUS_LG};
+    }}
+    QFrame#tile:hover {{
+        background-color: {palette.surface_container_high};
+        border: 1px solid {palette.border_hover};
+    }}
+    QFrame#panel {{
+        background-color: {palette.surface};
+        border: 1px solid {palette.border};
+        border-radius: {RADIUS_LG};
+    }}
+    QFrame#chip, QLabel#chip {{
+        background-color: transparent;
+        color: {palette.text_tertiary};
+        border: 1px solid {palette.border};
+        border-radius: {RADIUS_SM};
+        padding: 1px 6px;
+        font-size: 10px;
+    }}
+    QFrame#activity-row {{
+        background-color: transparent;
+        border: none;
         border-radius: {RADIUS_MD};
     }}
-    QFrame#card {{
-        background-color: {palette.surface_container_low};
-        border: 1px solid {palette.border};
-        border-radius: {RADIUS_MD};
+    QFrame#activity-row:hover {{
+        background-color: {palette.surface_container_high};
     }}
     QListWidget#schema-list {{
         background-color: {palette.surface_container_low};
         border: 1px solid {palette.border};
-        border-radius: {RADIUS_MD};
+        border-radius: {RADIUS_LG};
         padding: 6px;
         outline: none;
     }}
     QListWidget#schema-list::item {{
         color: {palette.text_muted};
-        border-radius: {RADIUS_SM};
+        border-radius: {RADIUS_MD};
         padding: 8px 10px;
-        margin: 1px 0px;
     }}
     QListWidget#schema-list::item:hover {{
         background-color: {palette.surface_container_high};
         color: {palette.text};
     }}
     QListWidget#schema-list::item:selected {{
-        background-color: {palette.surface_container_highest};
+        background-color: {palette.accent_tint_bg};
         color: {palette.accent};
         font-weight: 600;
     }}
     QTabWidget::pane {{
         border: 1px solid {palette.border};
-        border-radius: {RADIUS_SM};
+        border-radius: {RADIUS_MD};
     }}
     QTabBar::tab {{
         background-color: {palette.surface_container_low};
         color: {palette.text_muted};
         border: 1px solid {palette.border};
         border-bottom: none;
-        border-top-left-radius: {RADIUS_SM};
-        border-top-right-radius: {RADIUS_SM};
+        border-top-left-radius: {RADIUS_MD};
+        border-top-right-radius: {RADIUS_MD};
         padding: 6px 12px;
     }}
     QTabBar::tab:selected {{
@@ -273,10 +353,10 @@ def stylesheet(palette: Palette) -> str:
     }}
     QTableWidget, QTableView {{
         background-color: {palette.surface_container_lowest};
-        alternate-background-color: {palette.surface_container_low};
+        alternate-background-color: {palette.surface_container_high};
         gridline-color: {palette.border};
         border: 1px solid {palette.border};
-        border-radius: {RADIUS_MD};
+        border-radius: {RADIUS_LG};
     }}
     QHeaderView::section {{
         background-color: {palette.surface_container_high};
@@ -301,18 +381,20 @@ def stylesheet(palette: Palette) -> str:
     }}
     QScrollBar:vertical {{
         background: transparent;
-        width: 8px;
+        width: 10px;
     }}
     QScrollBar::handle:vertical {{
-        background: {palette.border_strong};
+        background: {palette.border_hover};
+        border-radius: {RADIUS_SM};
         min-height: 24px;
     }}
     QScrollBar:horizontal {{
         background: transparent;
-        height: 8px;
+        height: 10px;
     }}
     QScrollBar::handle:horizontal {{
-        background: {palette.border_strong};
+        background: {palette.border_hover};
+        border-radius: {RADIUS_SM};
         min-width: 24px;
     }}
     QScrollBar::add-line, QScrollBar::sub-line {{
@@ -323,7 +405,7 @@ def stylesheet(palette: Palette) -> str:
         background-color: {palette.surface_container};
         color: {palette.text};
         border: 1px solid {palette.border};
-        border-radius: {RADIUS_SM};
+        border-radius: {RADIUS_MD};
     }}
     QMenu::item:selected {{
         background-color: {palette.surface_container_highest};
@@ -344,9 +426,9 @@ def tile_style(palette: Palette, accent_hex: str | None = None) -> str:
     group's own `accent_hex`), falling back to the palette's own accent."""
     accent = accent_hex or palette.accent
     return (
-        f"QFrame#tile {{ background-color: {palette.surface_container_low}; "
+        f"QFrame#tile {{ background-color: {palette.surface_container}; "
         f"border: 1px solid {palette.border}; border-left: 4px solid {accent}; "
-        f"border-radius: {RADIUS_MD}; }}"
+        f"border-radius: {RADIUS_LG}; }}"
     )
 
 

@@ -7,6 +7,9 @@ created in the GUI shows up in `configgen user list` and vice versa.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -15,6 +18,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -25,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from configgen.core.auth import ROLES, AuthError, AuthStore, User
+from configgen.core.schema import find_schema_files, load_schema, set_schema_group
 
 
 class CreateUserDialog(QDialog):
@@ -61,12 +67,19 @@ class CreateUserDialog(QDialog):
 
 
 class UserAdminWindow(QDialog):
-    def __init__(self, store: AuthStore, actor: User, parent: QWidget | None = None):
+    def __init__(
+        self,
+        store: AuthStore,
+        actor: User,
+        schemas_dir: str | Path,
+        parent: QWidget | None = None,
+    ):
         super().__init__(parent)
         self.store = store
         self.actor = actor
+        self.schemas_dir = Path(schemas_dir)
         self.setWindowTitle("User Admin")
-        self.resize(700, 500)
+        self.resize(900, 500)
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -194,7 +207,7 @@ class UserAdminWindow(QDialog):
         self.groups_table = QTableWidget(0, 2)
         self.groups_table.setHorizontalHeaderLabels(["Group", "Description"])
         self.groups_table.setAlternatingRowColors(True)
-        self.groups_table.currentItemChanged.connect(lambda *_: self._refresh_group_members())
+        self.groups_table.currentItemChanged.connect(lambda *_: self._on_group_selected())
         left.addWidget(self.groups_table)
 
         group_buttons = QHBoxLayout()
@@ -222,6 +235,13 @@ class UserAdminWindow(QDialog):
         right.addLayout(member_buttons)
         layout.addLayout(right)
 
+        access = QVBoxLayout()
+        access.addWidget(QLabel("Config Access"))
+        self.access_list = QListWidget()
+        self.access_list.itemChanged.connect(self._on_access_item_changed)
+        access.addWidget(self.access_list)
+        layout.addLayout(access)
+
         self.refresh_groups()
         return page
 
@@ -231,7 +251,7 @@ class UserAdminWindow(QDialog):
         for row, group in enumerate(groups):
             self.groups_table.setItem(row, 0, QTableWidgetItem(group.name))
             self.groups_table.setItem(row, 1, QTableWidgetItem(group.description or ""))
-        self._refresh_group_members()
+        self._on_group_selected()
 
     def _selected_group(self) -> str | None:
         row = self.groups_table.currentRow()
@@ -239,6 +259,10 @@ class UserAdminWindow(QDialog):
             return None
         item = self.groups_table.item(row, 0)
         return item.text() if item else None
+
+    def _on_group_selected(self) -> None:
+        self._refresh_group_members()
+        self._refresh_access_list()
 
     def _refresh_group_members(self) -> None:
         group_name = self._selected_group()
@@ -252,6 +276,41 @@ class UserAdminWindow(QDialog):
         self.members_table.setRowCount(len(members))
         for row, member in enumerate(members):
             self.members_table.setItem(row, 0, QTableWidgetItem(member.username))
+
+    def _refresh_access_list(self) -> None:
+        """Every schema, checked for whichever one group currently owns it
+        (§13.2/§13.3: `schema.group` is a single access-control owner, not
+        a many-to-many membership) — checking a box for the selected group
+        reassigns that schema to it, taking it away from whatever group,
+        if any, had it before."""
+        group_name = self._selected_group()
+        self.access_list.blockSignals(True)
+        self.access_list.clear()
+        if group_name is not None:
+            for path in find_schema_files(self.schemas_dir):
+                try:
+                    schema = load_schema(path)
+                except Exception:  # noqa: BLE001 - just skip an unparseable schema here
+                    continue
+                item = QListWidgetItem(schema.name)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(
+                    Qt.CheckState.Checked if schema.group == group_name else Qt.CheckState.Unchecked
+                )
+                item.setData(Qt.ItemDataRole.UserRole, str(path))
+                if schema.group and schema.group != group_name:
+                    item.setToolTip(f"Currently assigned to '{schema.group}'")
+                self.access_list.addItem(item)
+        self.access_list.blockSignals(False)
+
+    def _on_access_item_changed(self, item: QListWidgetItem) -> None:
+        group_name = self._selected_group()
+        if group_name is None:
+            return
+        path = item.data(Qt.ItemDataRole.UserRole)
+        new_group = group_name if item.checkState() == Qt.CheckState.Checked else None
+        set_schema_group(path, new_group)
+        self._refresh_access_list()
 
     def _create_group(self) -> None:
         name, ok = QInputDialog.getText(self, "Create Group", "Group name:")

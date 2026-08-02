@@ -1,19 +1,41 @@
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from configgen.core.auth import AuthStore
 from configgen.ui.user_admin import CreateUserDialog, UserAdminWindow
+
+WIDGET_SCHEMA = """\
+name: Widget
+id: widget
+version: 1
+status: draft
+identity_field: name
+template: widget.j2
+fields:
+  - key: name
+    label: Name
+    type: string
+    required: true
+"""
 
 
 def _store(tmp_path: Path) -> AuthStore:
     return AuthStore(tmp_path / "users.db")
 
 
+def _schemas_dir(tmp_path: Path) -> Path:
+    schemas_dir = tmp_path / "schemas"
+    schemas_dir.mkdir(exist_ok=True)
+    (schemas_dir / "widget.yaml").write_text(WIDGET_SCHEMA, encoding="utf-8")
+    return schemas_dir
+
+
 def _window(tmp_path: Path, qtbot) -> tuple[UserAdminWindow, AuthStore]:
     store = _store(tmp_path)
     admin = store.authenticate("admin", "admin")
-    window = UserAdminWindow(store, admin)
+    window = UserAdminWindow(store, admin, _schemas_dir(tmp_path))
     qtbot.addWidget(window)
     return window, store
 
@@ -130,6 +152,69 @@ def test_remove_member(qtbot, tmp_path: Path, monkeypatch):
 
     window._remove_member()
     assert store.groups_for_user("bob") == set()
+
+
+# -- config access ---------------------------------------------------------
+
+
+def test_access_list_shows_every_schema_unchecked_for_a_new_group(qtbot, tmp_path: Path):
+    window, store = _window(tmp_path, qtbot)
+    store.create_group("NetworkTeam")
+    window.refresh_groups()
+    window.groups_table.selectRow(0)
+
+    assert window.access_list.count() == 1
+    item = window.access_list.item(0)
+    assert item.text() == "Widget"
+    assert item.checkState() == Qt.CheckState.Unchecked
+
+
+def test_checking_a_config_assigns_it_to_the_selected_group(qtbot, tmp_path: Path):
+    window, store = _window(tmp_path, qtbot)
+    store.create_group("NetworkTeam")
+    window.refresh_groups()
+    window.groups_table.selectRow(0)
+
+    item = window.access_list.item(0)
+    item.setCheckState(Qt.CheckState.Checked)
+
+    schema_path = tmp_path / "schemas" / "widget.yaml"
+    assert "group: NetworkTeam" in schema_path.read_text(encoding="utf-8")
+
+
+def test_unchecking_a_config_clears_its_group(qtbot, tmp_path: Path):
+    window, store = _window(tmp_path, qtbot)
+    store.create_group("NetworkTeam")
+    window.refresh_groups()
+    window.groups_table.selectRow(0)
+    window.access_list.item(0).setCheckState(Qt.CheckState.Checked)
+
+    window.access_list.item(0).setCheckState(Qt.CheckState.Unchecked)
+
+    schema_path = tmp_path / "schemas" / "widget.yaml"
+    assert "group:" not in schema_path.read_text(encoding="utf-8")
+
+
+def test_checking_for_a_different_group_reassigns_it(qtbot, tmp_path: Path):
+    window, store = _window(tmp_path, qtbot)
+    store.create_group("NetworkTeam")
+    store.create_group("DbTeam")
+    window.refresh_groups()
+
+    window.groups_table.selectRow(0)
+    first_group = window._selected_group()
+    window.access_list.item(0).setCheckState(Qt.CheckState.Checked)
+
+    other_row = 1 if first_group == window.groups_table.item(0, 0).text() else 0
+    window.groups_table.selectRow(other_row)
+    second_group = window._selected_group()
+    assert second_group != first_group
+    assert window.access_list.item(0).checkState() == Qt.CheckState.Unchecked
+
+    window.access_list.item(0).setCheckState(Qt.CheckState.Checked)
+
+    schema_path = tmp_path / "schemas" / "widget.yaml"
+    assert f"group: {second_group}" in schema_path.read_text(encoding="utf-8")
 
 
 # -- API keys ---------------------------------------------------------

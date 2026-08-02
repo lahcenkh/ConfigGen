@@ -55,3 +55,64 @@ def eye_icon(color: str, size: int = 16, *, visible: bool = True) -> QIcon:
             painter.drawLine(QPointF(size * 0.12, size * 0.85), QPointF(size * 0.88, size * 0.15))
 
     return _draw(size, color, draw)
+
+
+def home_icon(color: str, size: int = 16) -> QIcon:
+    def draw(painter: QPainter, size: int) -> None:
+        painter.drawLine(QPointF(size * 0.1, size * 0.5), QPointF(size / 2, size * 0.14))
+        painter.drawLine(QPointF(size / 2, size * 0.14), QPointF(size * 0.9, size * 0.5))
+        painter.drawRect(QRectF(size * 0.22, size * 0.48, size * 0.56, size * 0.4))
+
+    return _draw(size, color, draw)
+
+
+def template_icon(color: str, size: int = 16) -> QIcon:
+    def draw(painter: QPainter, size: int) -> None:
+        painter.drawRoundedRect(QRectF(size * 0.2, size * 0.12, size * 0.6, size * 0.76), 2, 2)
+        for frac in (0.36, 0.52, 0.68):
+            painter.drawLine(QPointF(size * 0.32, size * frac), QPointF(size * 0.68, size * frac))
+
+    return _draw(size, color, draw)
+
+
+def log_icon(color: str, size: int = 16) -> QIcon:
+    def draw(painter: QPainter, size: int) -> None:
+        painter.drawEllipse(QRectF(size * 0.1, size * 0.1, size * 0.8, size * 0.8))
+        center = QPointF(size / 2, size / 2)
+        painter.drawLine(center, QPointF(size / 2, size * 0.28))
+        painter.drawLine(center, QPointF(size * 0.66, size * 0.56))
+
+    return _draw(size, color, draw)
+
+
+def import_icon(color: str, size: int = 16) -> QIcon:
+    def draw(painter: QPainter, size: int) -> None:
+        painter.drawLine(QPointF(size / 2, size * 0.14), QPointF(size / 2, size * 0.6))
+        painter.drawLine(QPointF(size * 0.3, size * 0.42), QPointF(size / 2, size * 0.62))
+        painter.drawLine(QPointF(size * 0.7, size * 0.42), QPointF(size / 2, size * 0.62))
+        painter.drawLine(QPointF(size * 0.16, size * 0.82), QPointF(size * 0.84, size * 0.82))
+
+    return _draw(size, color, draw)
+
+
+def bulk_icon(color: str, size: int = 16) -> QIcon:
+    def draw(painter: QPainter, size: int) -> None:
+        for offset in (0.2, 0.42, 0.64):
+            painter.drawLine(
+                QPointF(size * 0.14, size * (offset + 0.08)),
+                QPointF(size / 2, size * offset),
+            )
+            painter.drawLine(
+                QPointF(size / 2, size * offset),
+                QPointF(size * 0.86, size * (offset + 0.08)),
+            )
+
+    return _draw(size, color, draw)
+
+
+def search_icon(color: str, size: int = 16) -> QIcon:
+    def draw(painter: QPainter, size: int) -> None:
+        painter.drawEllipse(QRectF(size * 0.12, size * 0.12, size * 0.56, size * 0.56))
+        painter.drawLine(QPointF(size * 0.62, size * 0.62), QPointF(size * 0.9, size * 0.9))
+
+    return _draw(size, color, draw)

@@ -46,5 +46,5 @@ Thumbs.db
 # Packaging artifacts
 *.spec.bak
 packaging/*.exe
-
+*.png
 .claude

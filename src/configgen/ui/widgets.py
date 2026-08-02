@@ -7,9 +7,10 @@ resolves those and calls back in (`set_options`/`set_completions`).
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QCheckBox,
     QComboBox,
     QCompleter,
@@ -270,7 +271,7 @@ class StatusBadge(QLabel):
     re-deriving it."""
 
     _COLOR_ATTR = {
-        "published": "success",
+        "published": "accent",
         "deprecated": "warning",
     }
 
@@ -282,11 +283,52 @@ class StatusBadge(QLabel):
     def set_status(self, status: str, palette: theme.Palette) -> None:
         self.setText(status.upper())
         color = getattr(palette, self._COLOR_ATTR.get(status, "text_muted"))
+        # "published" gets the mockup's tinted-mint chip fill; other
+        # statuses (draft/deprecated) stay a plain outline — there's no
+        # reference art for those, and a red/amber fill would read as an
+        # error/warning banner rather than a neutral status.
+        background = palette.accent_tint_bg if status == "published" else "transparent"
         self.setStyleSheet(
-            f"QLabel#badge {{ color: {color}; border: 1px solid {color}; "
-            f"border-radius: {theme.RADIUS_SM}; padding: 1px 6px; "
-            f"font-weight: 700; font-size: 10px; }}"
+            f"QLabel#badge {{ color: {color}; background-color: {background}; "
+            f"border: 1px solid {color}; border-radius: {theme.RADIUS_SM}; "
+            f"padding: 1px 6px; font-weight: 700; font-size: 9px; }}"
         )
+
+
+class ToggleSwitch(QAbstractButton):
+    """30x17 pill switch replacing the OS QCheckBox for on/off settings
+    (§ redesign). `setCheckable(True)` gives it isChecked()/setChecked()/
+    toggled(bool) for free from QAbstractButton — only the paint is custom,
+    so existing call sites that drive a checkbox via that API don't change."""
+
+    def __init__(self, palette: theme.Palette, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._palette = palette
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(30, 17)
+
+    def set_palette(self, palette: theme.Palette) -> None:
+        self._palette = palette
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: ARG002 - Qt's signature
+        checked = self.isChecked()
+        track_color = self._palette.accent_tint_border if checked else self._palette.border_strong
+        knob_color = self._palette.accent if checked else self._palette.text_muted
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(track_color))
+        radius = self.height() / 2
+        painter.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), radius, radius)
+
+        knob_diameter = self.height() - 4
+        knob_x = self.width() - knob_diameter - 2 if checked else 2
+        painter.setBrush(QColor(knob_color))
+        painter.drawEllipse(QRectF(knob_x, 2, knob_diameter, knob_diameter))
+        painter.end()
 
 
 WIDGET_CLASSES: dict[str, type[FieldWidget]] = {
