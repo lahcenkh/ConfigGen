@@ -27,8 +27,10 @@ from configgen.appinfo import APP_NAME, __version__
 from configgen.core.auth import AccountLocked, AuthError, AuthStore, InvalidCredentials, User
 from configgen.ui import theme
 from configgen.ui.icons import eye_icon, lock_icon, person_icon
+from configgen.ui.logo import logo_pixmap
 
 _CARD_WIDTH = 380
+_LOGO_SIZE = 56
 
 
 def _field_label(text: str) -> QLabel:
@@ -60,6 +62,11 @@ class LoginWindow(QDialog):
         card.setObjectName("card")
         card.setFixedWidth(_CARD_WIDTH)
         card_layout = QVBoxLayout(card)
+
+        logo_label = QLabel()
+        logo_label.setPixmap(logo_pixmap(_LOGO_SIZE))
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(logo_label)
 
         title = QLabel(APP_NAME)
         title.setObjectName("headline-lg")

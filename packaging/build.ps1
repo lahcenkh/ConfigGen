@@ -64,9 +64,15 @@ if (-not $pyinstallerVersion) {
     }
 }
 
-if (-not (Test-Path "packaging\icon.ico")) {
-    Write-Host "No packaging\icon.ico yet - generating it ..."
-    & $Python tools\make_icon.py
+# Always regenerate, not just when missing - packaging\icon.ico is a
+# rendered copy of resources\branding\logo.svg (tools/make_icon.py), and
+# a stale copy left over from a previous build would otherwise get baked
+# into the exe silently, with no error to catch it.
+Write-Host "Generating packaging\icon.ico from resources\branding\logo.svg ..."
+& $Python tools\make_icon.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to generate packaging\icon.ico."
+    exit 1
 }
 
 Write-Host "Building ConfigGen.exe ..."

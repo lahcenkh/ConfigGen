@@ -17,9 +17,11 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLay
 from configgen.appinfo import APP_NAME, __version__
 from configgen.core.auth import ROLE_TEMPLATE_ENGINEER, User
 from configgen.ui import icons, theme
+from configgen.ui.logo import logo_pixmap
 from configgen.ui.widgets import ToggleSwitch
 
 _NAV_ICON_SIZE = QSize(14, 14)
+_LOGO_SIZE = 24
 
 
 def _eyebrow(text: str) -> QLabel:
@@ -132,9 +134,16 @@ class Sidebar(QWidget):
         row_layout.setContentsMargins(16, 16, 16, 16)
         row_layout.setSpacing(10)
 
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(8)
+        logo_label = QLabel()
+        logo_label.setPixmap(logo_pixmap(_LOGO_SIZE))
+        brand_row.addWidget(logo_label)
         app_name = QLabel(APP_NAME)
         app_name.setObjectName("headline-lg")
-        row_layout.addWidget(app_name)
+        brand_row.addWidget(app_name)
+        brand_row.addStretch()
+        row_layout.addLayout(brand_row)
 
         identity_row = QHBoxLayout()
         identity_row.setSpacing(8)

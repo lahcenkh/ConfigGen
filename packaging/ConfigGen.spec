@@ -25,6 +25,7 @@ a = Analysis(
     datas=[
         (str(ROOT / "packaging" / "icon.ico"), "packaging"),
         (str(ROOT / "resources" / "data" / "README.txt"), "resources/data"),
+        (str(ROOT / "resources" / "branding" / "logo.svg"), "resources/branding"),
     ],
     hiddenimports=[],
     hookspath=[],
