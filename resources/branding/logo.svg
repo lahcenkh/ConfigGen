@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="88" height="88" viewBox="0 0 88 88" fill="none" aria-label="ConfigGen mark">
+  <rect x="1" y="1" width="86" height="86" rx="20" fill="#152420" stroke="#1f3630" stroke-width="2"/>
+  <path d="M31 24c-7 0-9 3-9 9v6c0 4-2 5-5 5 3 0 5 1 5 5v6c0 6 2 9 9 9" stroke="#5fd6a4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M57 24c7 0 9 3 9 9v6c0 4 2 5 5 5-3 0-5 1-5 5v6c0 6-2 9-9 9" stroke="#5fd6a4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M52 37a10 10 0 1 0 0 14h-6" stroke="#e6ebe8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
