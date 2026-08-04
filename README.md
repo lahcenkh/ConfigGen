@@ -11,9 +11,9 @@ add a config by dropping in a schema file, a template, and (optionally) a
 small Python hook. No changes to the core.
 
 
-![Login](docs/screenshots/login.png) |
+![Login](docs/screenshots/login.png)
 ![Dashboard](docs/screenshots/dashboard.png)
-![Generator](docs/screenshots/generator.png) |
+![Generator](docs/screenshots/generator.png)
 ![template_editor](docs/screenshots/template_editor.png)
 ![users](docs/screenshots/user_admin.png)
 
