@@ -55,6 +55,7 @@ exe = EXE(
     upx=False,
     console=False,
     icon=str(ROOT / "packaging" / "icon.ico"),
+    version=str(ROOT / "packaging" / "version_info.txt"),
 )
 
 coll = COLLECT(

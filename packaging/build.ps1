@@ -75,6 +75,17 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Same reasoning as icon.ico above: always regenerate, not just when
+# missing, so the exe's Properties > Details tab (File description,
+# version, copyright, ...) can never silently ship stale metadata from a
+# version bump that forgot to rerun this.
+Write-Host "Generating packaging\version_info.txt from configgen.appinfo ..."
+& $Python tools\make_version_info.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to generate packaging\version_info.txt."
+    exit 1
+}
+
 Write-Host "Building ConfigGen.exe ..."
 & $Python -m PyInstaller packaging\ConfigGen.spec --noconfirm
 if ($LASTEXITCODE -ne 0) {
