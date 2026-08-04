@@ -85,7 +85,7 @@ class _SchemaModel(BaseModel):
     description: str | None = None
     tags: list[str] = []
     supports_variants: bool = False
-    prepare: str | None = None
+    hook: str | None = None
     preflight: str | None = None
     comment_prefix: str = "!"
     template: str | None = None
@@ -205,16 +205,16 @@ def _check_templates_exist(model: _SchemaModel, templates_dir: Path | None) -> l
     return issues
 
 
-def _check_prepare_hook_exists(model: _SchemaModel, prepare_dir: Path | None) -> list[SchemaIssue]:
-    if prepare_dir is None or not model.prepare:
+def _check_hook_exists(model: _SchemaModel, hooks_dir: Path | None) -> list[SchemaIssue]:
+    if hooks_dir is None or not model.hook:
         return []
     issues = []
-    if not (prepare_dir / f"{model.prepare}.py").is_file():
+    if not (hooks_dir / f"{model.hook}.py").is_file():
         issues.append(
             SchemaIssue(
-                "prepare",
-                f"prepare hook not found: {model.prepare}",
-                suggestion=f"expected {prepare_dir / (model.prepare + '.py')}",
+                "hook",
+                f"hook not found: {model.hook}",
+                suggestion=f"expected {hooks_dir / (model.hook + '.py')}",
             )
         )
     return issues
@@ -261,12 +261,12 @@ def validate_schema(
     data: dict,
     *,
     templates_dir: Path | str | None = None,
-    prepare_dir: Path | str | None = None,
+    hooks_dir: Path | str | None = None,
     known_queries: set[str] | None = None,
 ) -> None:
     """Raises SchemaValidationError if the schema fails any check in §2.6."""
     templates_dir = Path(templates_dir) if templates_dir else None
-    prepare_dir = Path(prepare_dir) if prepare_dir else None
+    hooks_dir = Path(hooks_dir) if hooks_dir else None
 
     try:
         model = _SchemaModel.model_validate(data)
@@ -280,7 +280,7 @@ def validate_schema(
         *_check_conditional_references(model),
         *_check_port_lookup_no_default(model),
         *_check_templates_exist(model, templates_dir),
-        *_check_prepare_hook_exists(model, prepare_dir),
+        *_check_hook_exists(model, hooks_dir),
         *_check_from_db_queries(model, known_queries),
     ]
     if issues:

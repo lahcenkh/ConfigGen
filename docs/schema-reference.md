@@ -13,7 +13,7 @@ reference is a sibling directory of `schemas/`, resolved automatically:
 <project>/
 ├── schemas/<id>.yaml       # this file
 ├── templates/<file>.j2     # template:, or every documents[].template
-├── prepare/<name>.py       # prepare: <name>  ->  prepare/<name>.py
+├── hooks/<name>.py         # hook: <name>  ->  hooks/<name>.py
 ├── preflight/<name>.py     # preflight: <name> ->  preflight/<name>.py (unless it's a built-in)
 └── data/queries.yaml       # from_db field options
 ```
@@ -39,7 +39,7 @@ reference is a sibling directory of `schemas/`, resolved automatically:
 | `identity_field` | no | Which field's value names the output file and identifies it for diff/history lookups (usually `hostname` or similar) |
 | `comment_prefix` | no (default `!`) | Used to format the generated-file header comment (`!`, `#`, `//`, `;`, ...) |
 | `supports_variants` | no (default `false`) | Allows multiple saved outputs per identity value (e.g. re-provisioning the same host under a different variant name) |
-| `prepare` | no | Name of a Tier-2 hook, resolved to `prepare/<name>.py` — see [prepare-hooks.md](prepare-hooks.md) |
+| `hook` | no | Name of a Tier-2 hook, resolved to `hooks/<name>.py` — see [hooks.md](hooks.md) |
 | `preflight` | no | Name of a post-render syntax checker — a built-in platform (`ios`, `junos`, `sros`, `vrp`, `generic`) or a custom `preflight/<name>.py` |
 
 ## Field types
@@ -105,7 +105,7 @@ fields:
 ### `from_db`
 
 `from_db: {query: <name>}` names a query declared in the project's
-`data/queries.yaml` (see [prepare-hooks.md](prepare-hooks.md#servicesdb-and-queriesyaml)
+`data/queries.yaml` (see [hooks.md](hooks.md#servicesdb-and-queriesyaml)
 for the file format). The difference between the two field types that
 use it matters:
 
@@ -127,7 +127,7 @@ Python `bool` `True` or the string `"true"`):
 
 - **`visible_if`**: the field (and its value) is omitted from validation
   entirely when the condition doesn't hold — not just hidden in the GUI,
-  genuinely absent from what a template or prepare hook receives.
+  genuinely absent from what a template or hook receives.
 - **`required_if`**: on top of `required:`, the field also becomes
   mandatory whenever the condition holds (e.g. `ospf_process_id` is only
   required if `enable_ospf` is true).
@@ -190,8 +190,8 @@ duplicate field keys; every `pattern` compiles; every `default` matches
 its own `pattern`; every `visible_if`/`required_if`/`clear_when`
 references a real field key; no `port`/`lookup` field declares a
 `default`; the template file(s) referenced actually exist; if
-`prepare:` is set, the hook file exists; if any field's `from_db.query`
+`hook:` is set, the hook file exists; if any field's `from_db.query`
 is set and `data/queries.yaml` exists, the query name is declared there.
 It also warns (never fails) if the template references a variable that
-no field or prepare hook appears to supply — the same warning the GUI
+no field or hook appears to supply — the same warning the GUI
 template editor's **Check**/**Extract Variables** buttons show.

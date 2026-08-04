@@ -2,7 +2,7 @@
 build plan).
 
 Every row is validated (and, if the schema has one, run through its
-prepare hook) before anything is rendered — a row that fails either step
+hook) before anything is rendered — a row that fails either step
 is reported, never generated, and never blocks the rest of the batch.
 Valid rows are rendered and saved together under one `batch_{stamp}/`
 folder, with a shared `bulk_batch_id` linking their generation-log
@@ -26,7 +26,7 @@ from configgen.core.preflight import run_preflight
 from configgen.core.renderer import RenderError, render_documents
 from configgen.core.schema import Schema
 from configgen.core.validators import FieldValidationError, validate_values
-from configgen.prepare import PrepareError, Services, run_prepare_hook
+from configgen.hooks import HookError, Services, run_hook
 
 
 def read_csv_rows(path: str | Path) -> list[dict[str, str]]:
@@ -88,7 +88,7 @@ def run_bulk(
     rows: list[dict],
     *,
     templates_dir: Path | str,
-    prepare_dir: Path | str | None,
+    hooks_dir: Path | str | None,
     output_root: Path | str,
     source: str,
     username: str = "unknown",
@@ -99,10 +99,10 @@ def run_bulk(
     variant: str | None = None,
     timestamp: datetime | None = None,
 ) -> BulkResult:
-    if schema.prepare and (services is None or prepare_dir is None):
+    if schema.hook and (services is None or hooks_dir is None):
         raise ValueError(
-            f"schema '{schema.id}' declares a prepare hook; "
-            "run_bulk needs both `services` and `prepare_dir` to run it"
+            f"schema '{schema.id}' declares a hook; "
+            "run_bulk needs both `services` and `hooks_dir` to run it"
         )
 
     timestamp = timestamp or datetime.now()
@@ -119,12 +119,10 @@ def run_bulk(
             row_errors.append(RowError(row_number=row_number, errors=exc.errors))
             continue
 
-        if schema.prepare:
+        if schema.hook:
             try:
-                context = run_prepare_hook(
-                    prepare_dir, schema.prepare, values, {"username": username}, services
-                )
-            except PrepareError as exc:
+                context = run_hook(hooks_dir, schema.hook, values, {"username": username}, services)
+            except HookError as exc:
                 row_errors.append(RowError(row_number=row_number, errors=exc.errors))
                 continue
         else:

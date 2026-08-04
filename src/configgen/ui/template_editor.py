@@ -10,6 +10,7 @@ the editing surface (raw text + syntax highlighting) around them.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -59,13 +60,14 @@ from configgen.core.versioning import (
     restore_version,
     save_version,
 )
-from configgen.prepare import PrepareError, run_prepare_hook, services_for_schema
+from configgen.hooks import HookError, run_hook, services_for_schema
 from configgen.ui import theme
 from configgen.ui.form_builder import FormBuilder
 from configgen.ui.highlighters import ConfigHighlighter, JinjaHighlighter, YamlHighlighter
 from configgen.ui.widgets import StatusBadge
 
 _STATUS_RE = re.compile(r"(?m)^status:\s*\w+")
+_NAME_RE = re.compile(r"(?m)^name:\s*.*$")
 
 _NEW_SCHEMA_TEMPLATE = """name: {name}
 id: {id}
@@ -95,8 +97,21 @@ def _set_status_line(text: str, new_status: str) -> str:
     return new_text
 
 
+def _set_name_line(text: str, new_name: str) -> str:
+    # json.dumps produces a properly escaped double-quoted YAML scalar —
+    # safe even if the new name itself contains a colon/quote/# etc.,
+    # unlike the bare `name: {name}` interpolation _NEW_SCHEMA_TEMPLATE
+    # uses (fine there since a slug-derived id has already ruled out
+    # anything exotic; not fine for a name someone just typed by hand).
+    quoted = json.dumps(new_name)
+    new_text, count = _NAME_RE.subn(f"name: {quoted}", text, count=1)
+    if count == 0:
+        new_text = text.rstrip("\n") + f"\nname: {quoted}\n"
+    return new_text
+
+
 class TestRenderDialog(QDialog):
-    """FormBuilder + render — the same validate/prepare/render pipeline
+    """FormBuilder + render — the same validate/hook/render pipeline
     MainWindow._render uses, so "renders here" means "renders for real"."""
 
     def __init__(
@@ -154,16 +169,16 @@ class TestRenderDialog(QDialog):
             self.status_label.setText("Fix the highlighted fields before rendering.")
             return
 
-        templates_dir, prepare_dir = project_dirs_for(self.schema_path)
+        templates_dir, hooks_dir = project_dirs_for(self.schema_path)
         context = values
-        if self.schema.prepare:
+        if self.schema.hook:
             try:
                 services = services_for_schema(self.schema_path)
-                context = run_prepare_hook(
-                    prepare_dir, self.schema.prepare, values, {"username": self.username}, services
+                context = run_hook(
+                    hooks_dir, self.schema.hook, values, {"username": self.username}, services
                 )
-            except PrepareError as exc:
-                self.status_label.setText(f"Prepare hook rejected input: {exc.errors}")
+            except HookError as exc:
+                self.status_label.setText(f"Hook rejected input: {exc.errors}")
                 return
             except DatabaseError as exc:
                 self.status_label.setText(str(exc))
@@ -364,6 +379,10 @@ class TemplateEditorWindow(QDialog):
         self.status_badge = StatusBadge("draft", palette)
         self.status_badge.setVisible(False)
         header_row.addWidget(self.status_badge)
+        self.rename_button = QPushButton("Rename")
+        self.rename_button.setObjectName("secondary")
+        self.rename_button.clicked.connect(self._rename_schema)
+        header_row.addWidget(self.rename_button)
         right_layout.addLayout(header_row)
 
         schema_label_row = QHBoxLayout()
@@ -492,6 +511,7 @@ class TemplateEditorWindow(QDialog):
         for widget in (
             self.schema_editor,
             self.template_editor,
+            self.rename_button,
             self.save_button,
             self.check_button,
             self.extract_button,
@@ -635,11 +655,11 @@ class TemplateEditorWindow(QDialog):
         if parsed is None:
             return
         data, schema = parsed
-        templates_dir, prepare_dir = project_dirs_for(self.current_path)
+        templates_dir, hooks_dir = project_dirs_for(self.current_path)
 
         messages: list[str] = []
         try:
-            validate_schema(data, templates_dir=templates_dir, prepare_dir=prepare_dir)
+            validate_schema(data, templates_dir=templates_dir, hooks_dir=hooks_dir)
             messages.append("Schema structure: OK")
         except SchemaValidationError as exc:
             messages.append("Schema structure issues:")
@@ -651,7 +671,7 @@ class TemplateEditorWindow(QDialog):
                 continue
             variables = extract_variables_from_file(template_path)
             statuses = classify_variables(
-                variables, set(schema.field_map()), has_prepare_hook=bool(schema.prepare)
+                variables, set(schema.field_map()), has_hook=bool(schema.hook)
             )
             missing = [s.name for s in statuses if s.source == "missing"]
             if missing:
@@ -678,7 +698,7 @@ class TemplateEditorWindow(QDialog):
         statuses = classify_variables(
             variables,
             set(self.current_schema.field_map()),
-            has_prepare_hook=bool(self.current_schema.prepare),
+            has_hook=bool(self.current_schema.hook),
         )
         lines = [f"{s.name}: {s.source}" for s in statuses] or ["(no variables found)"]
         QMessageBox.information(self, f"Variables in {template_name}", "\n".join(lines))
@@ -725,6 +745,24 @@ class TemplateEditorWindow(QDialog):
         output_path = export_config_pack(self.current_path, path_str, author=self.user.username)
         self.message_label.setText(f"Exported to {output_path}.")
 
+    # -- rename ---------------------------------------------------------
+
+    def _rename_schema(self) -> None:
+        if self.current_path is None or self.current_schema is None:
+            return
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Template", "New name:", text=self.current_schema.name
+        )
+        new_name = new_name.strip()
+        if not ok or not new_name:
+            return
+        text = self.schema_editor.toPlainText()
+        new_text = _set_name_line(text, new_name)
+        self.schema_editor.setPlainText(new_text)
+        self.current_path.write_text(new_text, encoding="utf-8")
+        self.refresh_list(select_path=self.current_path)
+        self.message_label.setText(f"Renamed to '{new_name}'.")
+
     # -- lifecycle ---------------------------------------------------------
 
     def _set_status(self, new_status: str) -> None:
@@ -749,13 +787,13 @@ class TemplateEditorWindow(QDialog):
         if confirmed != QMessageBox.StandardButton.Yes:
             return
 
-        templates_dir, prepare_dir = project_dirs_for(self.current_path)
+        templates_dir, hooks_dir = project_dirs_for(self.current_path)
         for doc in self.current_schema.document_list():
             template_path = templates_dir / doc.template
             if template_path.is_file():
                 template_path.unlink()
-        if self.current_schema.prepare:
-            hook_path = prepare_dir / f"{self.current_schema.prepare}.py"
+        if self.current_schema.hook:
+            hook_path = hooks_dir / f"{self.current_schema.hook}.py"
             if hook_path.is_file():
                 hook_path.unlink()
         self.current_path.unlink()

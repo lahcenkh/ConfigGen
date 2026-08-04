@@ -86,7 +86,7 @@ def test_discover_filters_maps_names_to_filters_py_path(tmp_path: Path):
 
 
 def test_build_registry_combines_all_three(tmp_path: Path):
-    _write(tmp_path / "prepare" / "my_hook.py", "def build(v, c, s):\n    return {}\n")
+    _write(tmp_path / "hooks" / "my_hook.py", "def build(v, c, s):\n    return {}\n")
     _write(tmp_path / "preflight" / "eos.py", "def check(t):\n    return []\n")
     _write(tmp_path / "filters.py", "def shout(t):\n    return t\n\nFILTERS = {'shout': shout}\n")
 
@@ -125,21 +125,21 @@ def test_check_references_no_issues_when_nothing_declared(tmp_path: Path):
     assert check_references(registry, schemas_dir) == []
 
 
-def test_check_references_prepare_resolves(tmp_path: Path):
+def test_check_references_hook_resolves(tmp_path: Path):
     schemas_dir = tmp_path / "schemas"
-    _write_schema(schemas_dir, "Widget", "widget", prepare="my_hook")
-    registry = Registry(hooks={"my_hook": tmp_path / "prepare" / "my_hook.py"})
+    _write_schema(schemas_dir, "Widget", "widget", hook="my_hook")
+    registry = Registry(hooks={"my_hook": tmp_path / "hooks" / "my_hook.py"})
     assert check_references(registry, schemas_dir) == []
 
 
-def test_check_references_prepare_missing_reports_issue(tmp_path: Path):
+def test_check_references_hook_missing_reports_issue(tmp_path: Path):
     schemas_dir = tmp_path / "schemas"
-    _write_schema(schemas_dir, "Widget", "widget", prepare="ghost_hook")
+    _write_schema(schemas_dir, "Widget", "widget", hook="ghost_hook")
     registry = Registry()
     issues = check_references(registry, schemas_dir)
     assert len(issues) == 1
     assert issues[0].schema_id == "widget"
-    assert issues[0].field == "prepare"
+    assert issues[0].field == "hook"
     assert issues[0].value == "ghost_hook"
 
 
@@ -172,8 +172,8 @@ def test_check_references_preflight_unknown_reports_issue(tmp_path: Path):
 def test_find_orphaned_plugins_hook_referenced_is_not_orphan(tmp_path: Path):
     schemas_dir = tmp_path / "schemas"
     templates_dir = tmp_path / "templates"
-    _write_schema(schemas_dir, "Widget", "widget", prepare="my_hook")
-    registry = Registry(hooks={"my_hook": tmp_path / "prepare" / "my_hook.py"})
+    _write_schema(schemas_dir, "Widget", "widget", hook="my_hook")
+    registry = Registry(hooks={"my_hook": tmp_path / "hooks" / "my_hook.py"})
     orphans = find_orphaned_plugins(registry, schemas_dir, templates_dir)
     assert orphans == []
 
@@ -181,8 +181,8 @@ def test_find_orphaned_plugins_hook_referenced_is_not_orphan(tmp_path: Path):
 def test_find_orphaned_plugins_unreferenced_hook_is_orphan(tmp_path: Path):
     schemas_dir = tmp_path / "schemas"
     templates_dir = tmp_path / "templates"
-    _write_schema(schemas_dir, "Widget", "widget")  # no prepare:
-    registry = Registry(hooks={"unused_hook": tmp_path / "prepare" / "unused_hook.py"})
+    _write_schema(schemas_dir, "Widget", "widget")  # no hook:
+    registry = Registry(hooks={"unused_hook": tmp_path / "hooks" / "unused_hook.py"})
     orphans = find_orphaned_plugins(registry, schemas_dir, templates_dir)
     assert [o.name for o in orphans] == ["unused_hook"]
     assert orphans[0].kind == "hook"

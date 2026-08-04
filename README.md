@@ -70,7 +70,7 @@ configgen generate examples/schemas/router_base_config.yaml \
 ```bash
 # 1. Write resources/schemas/my_thing.yaml   (fields + template name)
 # 2. Write resources/templates/my_thing.j2   (the Jinja2 output)
-# 3. Optional: resources/prepare/my_thing.py (a build() hook for derived/DB-backed values)
+# 3. Optional: resources/hooks/my_thing.py   (a build() hook for derived/DB-backed values)
 configgen check resources/schemas/my_thing.yaml   # validates + warns on template/field mismatches
 ```
 
@@ -86,7 +86,7 @@ example (form-only → multi-document → database-backed), including the
 |---|---|
 | [docs/adding-a-config.md](docs/adding-a-config.md) | Worked examples: form-only, multi-document, DB-backed |
 | [docs/schema-reference.md](docs/schema-reference.md) | Every field type, every schema option |
-| [docs/prepare-hooks.md](docs/prepare-hooks.md) | The `build()` hook contract, `services.db`/`services.net`, custom filters |
+| [docs/hooks.md](docs/hooks.md) | The `build()` hook contract, `services.db`/`services.net`, custom filters |
 | [docs/bulk-generation.md](docs/bulk-generation.md) | CSV/database-driven batch generation |
 | [docs/roles-and-groups.md](docs/roles-and-groups.md) | The three-role model, group scoping, template lifecycle |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | The errors you'll actually hit, and what they mean |

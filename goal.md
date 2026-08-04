@@ -15,7 +15,7 @@ detail. No real inventory, no telecom customers, no internal data.
 1. **Plug and play.** A new config = one YAML schema + one (or more) Jinja
    templates + optional one Python hook. Nothing else is touched.
 2. **Two variable sources.** Field values come from the form; derived or
-   looked-up values come from a Python *prepare hook* that may read a SQLite
+   looked-up values come from a Python *hook* that may read a SQLite
    database through a generic reader.
 3. **Nothing company-specific in core.** The engine knows nothing about routers,
    regions, or any particular table. Domain logic lives entirely in the user's
@@ -57,8 +57,8 @@ configgen/
 │   │   ├── auth.py             users, roles, groups, grants, PBKDF2, lockout, API keys
 │   │   ├── registry.py         auto-discover hooks, filters, preflight checks
 │   │   └── versioning.py       schema+template history, manifest, traceability
-│   ├── prepare/
-│   │   ├── __init__.py         hook loader + Services + PrepareError
+│   ├── hooks/
+│   │   ├── __init__.py         hook loader + Services + HookError
 │   │   └── <name>.py           one file per DB-backed / derived config
 │   └── ui/
 │       ├── theme.py            design tokens + stylesheets + dark mode
@@ -79,14 +79,14 @@ configgen/
 │   └── data/
 │       └── README.txt          "drop your database here" — no DB committed
 ├── examples/                   fictional, self-contained demo configs
-│   ├── schemas/  templates/  prepare/  sample.db  sample_bulk.csv
+│   ├── schemas/  templates/  hooks/  sample.db  sample_bulk.csv
 ├── tests/
 ├── packaging/                  ConfigGen.spec, sign.ps1, deploy-cert.ps1, icon, Dockerfile
 ├── tools/                      make_icon.py, screenshot harness
 ├── docs/
 │   ├── adding-a-config.md      the contributor guide
 │   ├── schema-reference.md     every field type and option
-│   ├── prepare-hooks.md        the hook contract + db service
+│   ├── hooks.md                 the hook contract + db service
 │   ├── bulk-generation.md      CSV format, database-driven batches
 │   ├── roles-and-groups.md     the three-role model, group scoping, permissions
 │   └── troubleshooting.md      top 10 errors and fixes
@@ -120,7 +120,7 @@ status: published                    # draft | published | deprecated
 description: "Base router config with OSPF, NTP, SNMP, and management interface"
 tags: ["routing", "ospf", "cisco-ios"]  # for filtering and search
 supports_variants: false             # optional second axis (was "homing")
-prepare: acme_router_base            # optional: prepare/<name>.py
+hook: acme_router_base                # optional: hooks/<name>.py
 preflight: ios                       # optional: syntax pre-check for target platform
 template: acme_router_base.j2        # single-document config
 # --- OR, for multiple outputs ---
@@ -173,7 +173,7 @@ breaks double-quoted), `example`, and the conditionals below.
 
 - Per-field: `pattern`, `min`/`max`, type coercion.
 - Cross-field: declared in the schema where simple (e.g. "these two must differ"),
-  or done in the prepare hook where it depends on a DB lookup.
+  or done in the hook where it depends on a DB lookup.
 - Error messages prefer `example` over raw regex ("Expected like gei-0/0/0/0").
 
 ### 2.5 DB-backed choices / autocomplete
@@ -200,7 +200,7 @@ is built. This catches:
 - Unrecognized field types
 - `from_db` references to queries not defined in `queries.yaml`
 - Template files that don't exist on disk
-- Prepare hook files that don't exist if `prepare:` is declared
+- Hook files that don't exist if `hook:` is declared
 - `visible_if` / `required_if` / `clear_when` referencing non-existent field keys
 - Regex patterns that don't compile
 - Defaults that violate their own field's pattern
@@ -224,7 +224,7 @@ variable names the template expects.
 ### 3.2 Three uses
 
 **Mismatch detection.** On schema load, the extractor compares template variables
-against declared schema fields (and prepare hook return keys, if the hook exists).
+against declared schema fields (and hook return keys, if the hook exists).
 Any variable in the template that has no source is flagged as a warning. This
 prevents the most common user error: template references `{{ vlan_id }}` but no
 field or hook provides it.
@@ -251,7 +251,7 @@ configgen extract <template.j2> --check <schema.yaml> # report mismatches
 ### 3.4 Limitations
 
 Extraction covers `{{ var }}`, `{% for x in var %}`, `{% if var %}`, and dotted
-access (`{{ cfg.hostname }}`). It does not trace through prepare hooks — if a
+access (`{{ cfg.hostname }}`). It does not trace through hooks — if a
 hook returns `cfg` with subkeys, the extractor sees `cfg` but not `cfg.hostname`.
 The mismatch check is therefore advisory for hook-driven configs, not blocking.
 
@@ -260,12 +260,12 @@ The mismatch check is therefore advisory for hook-driven configs, not blocking.
 ## 4. The two-tier engine
 
 ```
-form values ──▶ validate (Tier 1) ──▶ prepare hook (Tier 2, optional) ──▶ preflight (optional) ──▶ render ──▶ save + log
+form values ──▶ validate (Tier 1) ──▶ hook (Tier 2, optional) ──▶ preflight (optional) ──▶ render ──▶ save + log
 ```
 
 - **Tier 1 (declarative).** Fields → validated typed values. A config with only
   form inputs and simple validation needs no code at all.
-- **Tier 2 (prepare hook).** For derived or looked-up values. The hook receives
+- **Tier 2 (hook).** For derived or looked-up values. The hook receives
   the validated values and a `Services` object, and returns the final template
   context. This is where DB lookups and custom arithmetic live.
 - **Preflight (optional).** After rendering, a platform-specific check scans the
@@ -273,7 +273,7 @@ form values ──▶ validate (Tier 1) ──▶ prepare hook (Tier 2, optional
 - **Log.** Every generation is recorded in the audit trail with user, group,
   schema version, inputs, and timestamp.
 
-A config with no `prepare` renders straight from Tier 1.
+A config with no `hook` renders straight from Tier 1.
 
 ---
 
@@ -339,16 +339,16 @@ latency of per-keystroke open/close cycles.
 
 ---
 
-## 6. The prepare hook contract
+## 6. The hook contract
 
-One file per config that needs derivation or lookups: `prepare/<id>.py`.
+One file per config that needs derivation or lookups: `hooks/<id>.py`.
 
 ```python
 def build(values: dict, context: dict, services: Services) -> dict:
-    """Return the template context. Raise PrepareError({field: msg}) to reject."""
+    """Return the template context. Raise HookError({field: msg}) to reject."""
     device = services.db.query("device", name=values["device_name"])
     if not device:
-        raise PrepareError({"device_name": "Unknown device"})
+        raise HookError({"device_name": "Unknown device"})
     return {
         "cfg": {
             "name": values["device_name"],
@@ -363,7 +363,7 @@ def build(values: dict, context: dict, services: Services) -> dict:
   functions), and any project-registered helpers.
 - The returned dict's keys are the **template's** top-level variables. Names are
   the author's choice — the engine imposes none.
-- Binding: explicit via `prepare:` in the schema (renameable, visible).
+- Binding: explicit via `hook:` in the schema (renameable, visible).
 - Hooks are pure Python and unit-testable in isolation.
 
 Custom filters (like the private build's two Jinja filters) are registered the
@@ -551,12 +551,12 @@ only. The checks run automatically for all roles on generation.
 
 On startup, `core/registry.py` scans:
 
-- `prepare/*.py` → prepare hooks
+- `hooks/*.py` → hooks
 - `filters.py` → custom Jinja filters
 - `preflight/*.py` → preflight checkers
 
 It builds a registry mapping each plugin to its source file, validates that every
-schema's `prepare:` and `preflight:` point to existing plugins, and logs warnings
+schema's `hook:` and `preflight:` point to existing plugins, and logs warnings
 for orphaned plugins (exist but no schema references them).
 
 ### 12.2 CLI
@@ -846,7 +846,7 @@ acme_router_base.configpack/
 ├── schema.yaml
 ├── templates/
 │   └── acme_router_base.j2
-├── prepare/
+├── hooks/
 │   └── acme_router_base.py    (if exists)
 ├── preflight/
 │   └── ios.py                 (if exists)
@@ -862,7 +862,7 @@ Export is available to Admins and Template Engineers.
 schema, and registers the config. Conflicts (same `id` already exists) prompt the
 user to overwrite or rename.
 
-Import is Admin only (it adds executable code via prepare hooks).
+Import is Admin only (it adds executable code via hooks).
 
 ### 14.3 GUI
 
@@ -940,7 +940,7 @@ only).
 
 ## 17. Tests
 
-- Engine: schema loading (all field types, conditionals, documents/prepare),
+- Engine: schema loading (all field types, conditionals, documents/hooks),
   validation, coercion, network arithmetic, multi-document render.
 - **Schema validator:** malformed YAML, missing fields, bad references, duplicate
   keys, invalid regex, defaults violating patterns.
@@ -948,7 +948,7 @@ only).
   conditionals, dotted access), mismatch detection, scaffold generation.
 - DB service: named queries against a tiny fixture, parameter binding, missing-DB
   behaviour, connection release, health check.
-- Prepare layer: hook loading, Services, PrepareError surfacing.
+- Hook layer: hook loading, Services, HookError surfacing.
 - **Bulk:** CSV parsing, per-row validation, partial-success handling, batch
   manifest generation, per-row log entries.
 - **Diff:** identical files, added/removed lines, multi-document diff.
@@ -983,7 +983,7 @@ only).
 - **docs/schema-reference.md:** every field type, every option, regex quoting
   gotcha, conditionals, `version`, `tags`, `description`, `preflight`, `status`,
   `group`.
-- **docs/prepare-hooks.md:** the `build()` contract, `services.db` / `services.net`,
+- **docs/hooks.md:** the `build()` contract, `services.db` / `services.net`,
   writing `queries.yaml`, registering custom filters.
 - **docs/bulk-generation.md:** CSV format requirements, column-to-field mapping,
   database-driven batches, error handling, batch manifest.
@@ -995,7 +995,7 @@ only).
   - "Unknown variable in template" → StrictUndefined error explained
   - "WinError 32" → the file lock issue (fixed, but documented)
   - "Pattern mismatch" → how to debug regex, single-quote reminder
-  - "Hook not found" → prepare: value doesn't match filename
+  - "Hook not found" → hook: value doesn't match filename
   - "Schema validation failed" → read the error, check field types
   - "Preflight warning" → common IOS/JunOS syntax mistakes
   - "Bulk generation partial failure" → check the error CSV
@@ -1024,7 +1024,7 @@ These were found the hard way; the rebuild keeps them:
 - Preview tabs styled so inactive tabs are readable.
 - Quick-start tiles use a reflowing flow layout (no horizontal overflow).
 - Field defaults must satisfy their own pattern (tested).
-- Template `Check` uses `StrictUndefined`; prepare-driven configs are excluded
+- Template `Check` uses `StrictUndefined`; hook-driven configs are excluded
   from the declarative variable check.
 
 ---
@@ -1037,7 +1037,7 @@ These were found the hard way; the rebuild keeps them:
 | **1** | Core: schema, schema_validator, validators, values, renderer, exporter + tests | CLI can `check` / `list` / `generate` a form-only example |
 | **2** | Extractor: Jinja2 AST parsing, mismatch detection, scaffold generation + tests | `configgen extract` works, `--scaffold` generates YAML |
 | **3** | Generic db service + `queries.yaml` + `from_db` + db health check + tests | a DB-backed example renders headless |
-| **4** | Prepare layer + Services(net, db) + example hook + tests | a derived example renders headless |
+| **4** | Hook layer + Services(net, db) + example hook + tests | a derived example renders headless |
 | **5** | Multi-document render + per-document save + reopen | a multi-doc example round-trips |
 | **6** | Auth + three roles + groups + group scoping + API keys + generation log + tests | login works, role enforcement tested, log entries created |
 | **7** | Bulk generation: CSV parsing, per-row validation, batch save, per-row logging + tests | `configgen bulk` processes a CSV end to end with log entries |

@@ -3,7 +3,7 @@
 Plain fields (string/int/bool/text) render as their native Python type.
 Address fields render as one of these wrappers so a template can pull
 `.ip`, `.netmask`, `.first_usable`, etc. without the template author (or a
-prepare hook) redoing subnet arithmetic by hand.
+hook) redoing subnet arithmetic by hand.
 """
 
 from __future__ import annotations

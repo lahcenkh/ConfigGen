@@ -5,8 +5,8 @@ plan): a template author gets mismatch warnings before Generate, and a
 schema can be scaffolded straight from a template that's already written.
 
 Extraction only sees top-level names — `{{ cfg.hostname }}` is seen as
-`cfg`, never `cfg.hostname` — so it cannot trace through a prepare hook
-that returns a dict of subkeys. That makes mismatch detection advisory for
+`cfg`, never `cfg.hostname` — so it cannot trace through a hook that
+returns a dict of subkeys. That makes mismatch detection advisory for
 hook-driven schemas, never blocking (§3.4).
 """
 
@@ -55,16 +55,16 @@ def classify_variables(
     variables: list[str],
     field_keys: set[str],
     *,
-    has_prepare_hook: bool,
+    has_hook: bool,
 ) -> list[VariableStatus]:
     """One entry per template variable: "field" if a schema field provides
-    it, "hook" if we can't rule out the prepare hook providing it (schema
+    it, "hook" if we can't rule out the hook providing it (schema
     declares one, so this is a guess, not a fact), else "missing"."""
     statuses = []
     for name in variables:
         if name in field_keys:
             source = "field"
-        elif has_prepare_hook:
+        elif has_hook:
             source = "hook"
         else:
             source = "missing"

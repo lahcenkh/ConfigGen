@@ -3,5 +3,5 @@ generated-config header comment, the CLI --version flag, and the About dialog.""
 
 APP_NAME = "ConfigGen"
 __version__ = "0.1.0"
-AUTHOR = "ConfigGen Contributors"
-CONTACT = "https://github.com/ConfigGen/ConfigGen"
+AUTHOR = "Lahcen Khouchane"
+CONTACT = "https://github.com/lahcenkh/ConfigGen"

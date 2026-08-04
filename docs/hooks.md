@@ -1,20 +1,20 @@
-# Prepare hooks (Tier 2)
+# Hooks (Tier 2)
 
 Most configs only need Tier 1: a schema's fields, validated, become the
-template context directly. A **prepare hook** is Tier 2, for the configs
+template context directly. A **hook** is Tier 2, for the configs
 that need more — a value looked up from a database, an address derived
 from a subnet, a submission rejected for a reason no single field's
 `pattern:` can express. It's one Python file, pure and unit-testable in
 isolation, that runs between validation and rendering:
 
 ```text
-form input -> Tier 1 validate (schema fields) -> [Tier 2: prepare hook] -> render -> save + log
+form input -> Tier 1 validate (schema fields) -> [Tier 2: hook] -> render -> save + log
 ```
 
 ## Wiring one up
 
-1. Add `prepare: <name>` to the schema.
-2. Write `<name>.py` in the project's `prepare/` folder (a sibling of
+1. Add `hook: <name>` to the schema.
+2. Write `<name>.py` in the project's `hooks/` folder (a sibling of
    `schemas/`, `templates/`, and `data/` — the same "resolved from the
    schema's own path" layout as everything else, see
    [schema-reference.md](schema-reference.md#file-layout)).
@@ -33,20 +33,20 @@ def build(values: dict, context: dict, services) -> dict:
   see below.
 - **Return value** becomes the template's entire context — a hook can
   pass values through unchanged, add to them, or replace them
-  completely (`examples/prepare/device_provisioning.py` below returns a
+  completely (`examples/hooks/device_provisioning.py` below returns a
   single `cfg` dict, so its template reads `{{ cfg.name }}`, not
   `{{ device_name }}`).
 
-Reject the submission by raising `PrepareError`, in the same
+Reject the submission by raising `HookError`, in the same
 `{field_key: message}` shape a Tier 1 validation failure uses — the GUI
 paints it on the same field, the CLI prints it the same way:
 
 ```python
-from configgen.prepare import PrepareError
+from configgen.hooks import HookError
 
 def build(values, context, services):
     if not looks_right(values["device_name"]):
-        raise PrepareError({"device_name": "not a recognized device"})
+        raise HookError({"device_name": "not a recognized device"})
     ...
 ```
 
@@ -56,18 +56,18 @@ plain Python, never sandboxed.
 
 ## A full example
 
-`examples/schemas/device_provisioning.yaml` declares `prepare:
+`examples/schemas/device_provisioning.yaml` declares `hook:
 device_provisioning`, taking just a `device_name` and a `subnet` from
-the form. `examples/prepare/device_provisioning.py`:
+the form. `examples/hooks/device_provisioning.py`:
 
 ```python
-from configgen.prepare import PrepareError
+from configgen.hooks import HookError
 
 
 def build(values: dict, context: dict, services) -> dict:
     device = services.db.query("device", name=values["device_name"])
     if not device:
-        raise PrepareError({"device_name": f"Unknown device '{values['device_name']}'"})
+        raise HookError({"device_name": f"Unknown device '{values['device_name']}'"})
 
     return {
         "cfg": {
@@ -88,7 +88,7 @@ configgen generate examples/schemas/device_provisioning.yaml \
 ```
 
 Because `check`'s declarative variable-mismatch warning can't see inside
-a hook (it only knows form fields), **prepare-driven schemas are
+a hook (it only knows form fields), **hook-driven schemas are
 excluded from that warning entirely** — `cfg.name` would otherwise look
 like an undeclared variable. This is advisory-only in both directions:
 `check` genuinely can't verify a hook's output matches what the template
@@ -112,6 +112,25 @@ queries:
   devices_by_site:
     sql: "SELECT * FROM devices WHERE site = :site"
     returns: rows               # -> [{"name": ..., ...}, ...]
+```
+
+Querying more than one SQLite file? Replace `database:` with `databases:`
+(a mapping of alias to path) and give every query a `use:` naming which
+one it runs against — required as soon as there's more than one:
+
+```yaml
+databases:
+  inv: inventory.db
+  dev: devices.db
+queries:
+  regions:
+    use: inv
+    sql: "SELECT DISTINCT region FROM sites ORDER BY region"
+    returns: scalar_list
+  device:
+    use: dev
+    sql: "SELECT * FROM devices WHERE name = :name"
+    returns: row
 ```
 
 `returns:` shapes the result: `scalar_list` (first column of every row,
@@ -189,8 +208,8 @@ A hook is a plain function — test it directly, no ConfigGen scaffolding
 needed:
 
 ```python
-from configgen.prepare import PrepareError, Services
-from examples.prepare.device_provisioning import build
+from configgen.hooks import HookError, Services
+from examples.hooks.device_provisioning import build
 
 def test_build_derives_management_ip():
     services = Services(db=fake_db_with_one_device())
@@ -201,7 +220,7 @@ def test_build_rejects_unknown_device():
     services = Services(db=fake_db_with_no_devices())
     try:
         build({"device_name": "ghost-01", "subnet": "10.20.30.0/24"}, {}, services)
-        assert False, "expected PrepareError"
-    except PrepareError as exc:
+        assert False, "expected HookError"
+    except HookError as exc:
         assert "device_name" in exc.errors
 ```

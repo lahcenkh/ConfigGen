@@ -124,6 +124,11 @@ def _row_to_user(row: sqlite3.Row) -> User:
 class AuthStore:
     def __init__(self, db_path: str | Path, *, bootstrap: bool = True):
         self.db_path = Path(db_path)
+        # sqlite3.connect() doesn't create missing parent directories —
+        # harmless when db_path is app-root-adjacent (always exists), but
+        # users_db_path() now lives under resources/data/, which a fresh
+        # from_db-free install has no other reason to have created yet.
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
         if bootstrap:
             self._ensure_bootstrap_admin()

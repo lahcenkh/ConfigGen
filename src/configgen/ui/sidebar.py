@@ -50,6 +50,7 @@ class Sidebar(QWidget):
     bulkGenerateRequested = Signal()
     generationLogRequested = Signal()
     aboutRequested = Signal()
+    helpRequested = Signal()
     highlightRulesRequested = Signal()
     logoutRequested = Signal()
     darkModeToggled = Signal(bool)
@@ -230,10 +231,18 @@ class Sidebar(QWidget):
         highlight_rules_button.clicked.connect(self.highlightRulesRequested)
         footer_layout.addWidget(highlight_rules_button)
 
+        help_row = QHBoxLayout()
+        help_button = QPushButton("Help")
+        help_button.setObjectName("secondary")
+        help_button.clicked.connect(self.helpRequested)
+        help_row.addWidget(help_button)
+
         about_button = QPushButton("About")
         about_button.setObjectName("secondary")
         about_button.clicked.connect(self.aboutRequested)
-        footer_layout.addWidget(about_button)
+        help_row.addWidget(about_button)
+
+        footer_layout.addLayout(help_row)
 
         logout_button = QPushButton("Log Out")
         logout_button.setObjectName("danger")

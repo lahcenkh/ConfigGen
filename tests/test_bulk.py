@@ -7,7 +7,7 @@ import pytest
 
 from configgen.core.bulk import read_csv_rows, read_rows, read_xlsx_rows, run_bulk
 from configgen.core.schema import Field, Schema
-from configgen.prepare import Services
+from configgen.hooks import Services
 
 TS = datetime(2026, 1, 15, 14, 30, 0)
 
@@ -101,7 +101,7 @@ def test_run_bulk_all_valid_rows_generates_and_manifests(tmp_path: Path):
         schema,
         rows,
         templates_dir=tmp_path,
-        prepare_dir=None,
+        hooks_dir=None,
         output_root=tmp_path / "out",
         source="test.csv",
         username="alice",
@@ -134,7 +134,7 @@ def test_run_bulk_partial_success_reports_row_errors(tmp_path: Path):
         schema,
         rows,
         templates_dir=tmp_path,
-        prepare_dir=None,
+        hooks_dir=None,
         output_root=tmp_path / "out",
         source="test.csv",
         timestamp=TS,
@@ -158,7 +158,7 @@ def test_run_bulk_zero_valid_rows_still_writes_manifest(tmp_path: Path):
         schema,
         rows,
         templates_dir=tmp_path,
-        prepare_dir=None,
+        hooks_dir=None,
         output_root=tmp_path / "out",
         source="test.csv",
         timestamp=TS,
@@ -179,7 +179,7 @@ def test_run_bulk_each_row_gets_its_own_filename(tmp_path: Path):
         schema,
         rows,
         templates_dir=tmp_path,
-        prepare_dir=None,
+        hooks_dir=None,
         output_root=tmp_path / "out",
         source="test.csv",
         timestamp=TS,
@@ -190,23 +190,23 @@ def test_run_bulk_each_row_gets_its_own_filename(tmp_path: Path):
     assert any("web02" in f for f in filenames)
 
 
-# -- run_bulk: prepare hook integration ---------------------------------------
+# -- run_bulk: hook integration ---------------------------------------
 
 
-def test_run_bulk_with_prepare_hook_success(tmp_path: Path):
+def test_run_bulk_with_hook_success(tmp_path: Path):
     (tmp_path / "widget.j2").write_text("hello {{ cfg_name }}", encoding="utf-8")
     (tmp_path / "hook.py").write_text(
         "def build(values, context, services):\n"
         "    return {'cfg_name': values['name'].upper()}\n",
         encoding="utf-8",
     )
-    schema = _schema(prepare="hook")
+    schema = _schema(hook="hook")
 
     result = run_bulk(
         schema,
         [{"name": "web01"}],
         templates_dir=tmp_path,
-        prepare_dir=tmp_path,
+        hooks_dir=tmp_path,
         output_root=tmp_path / "out",
         source="test.csv",
         services=Services(),
@@ -217,24 +217,24 @@ def test_run_bulk_with_prepare_hook_success(tmp_path: Path):
     assert text.endswith("hello WEB01")
 
 
-def test_run_bulk_prepare_error_becomes_row_error_not_a_crash(tmp_path: Path):
+def test_run_bulk_hook_error_becomes_row_error_not_a_crash(tmp_path: Path):
     (tmp_path / "widget.j2").write_text("hello {{ cfg_name }}", encoding="utf-8")
     (tmp_path / "hook.py").write_text(
-        "from configgen.prepare import PrepareError\n"
+        "from configgen.hooks import HookError\n"
         "\n"
         "def build(values, context, services):\n"
         "    if values['name'] == 'ghost':\n"
-        "        raise PrepareError({'name': 'unknown device'})\n"
+        "        raise HookError({'name': 'unknown device'})\n"
         "    return {'cfg_name': values['name']}\n",
         encoding="utf-8",
     )
-    schema = _schema(prepare="hook")
+    schema = _schema(hook="hook")
 
     result = run_bulk(
         schema,
         [{"name": "web01"}, {"name": "ghost"}],
         templates_dir=tmp_path,
-        prepare_dir=tmp_path,
+        hooks_dir=tmp_path,
         output_root=tmp_path / "out",
         source="test.csv",
         services=Services(),
@@ -245,15 +245,15 @@ def test_run_bulk_prepare_error_becomes_row_error_not_a_crash(tmp_path: Path):
     assert result.row_errors[0].errors == {"name": "unknown device"}
 
 
-def test_run_bulk_prepare_schema_without_services_raises_valueerror(tmp_path: Path):
+def test_run_bulk_hook_schema_without_services_raises_valueerror(tmp_path: Path):
     _write_template(tmp_path, "hello {{ cfg_name }}")
-    schema = _schema(prepare="hook")
+    schema = _schema(hook="hook")
     with pytest.raises(ValueError):
         run_bulk(
             schema,
             [{"name": "web01"}],
             templates_dir=tmp_path,
-            prepare_dir=None,
+            hooks_dir=None,
             output_root=tmp_path / "out",
             source="test.csv",
             timestamp=TS,
@@ -285,7 +285,7 @@ def test_run_bulk_validates_from_db_choice_field(tmp_path: Path):
         schema,
         [{"region": "us-east"}, {"region": "mars"}],
         templates_dir=tmp_path,
-        prepare_dir=None,
+        hooks_dir=None,
         output_root=tmp_path / "out",
         source="test.csv",
         database=database,
@@ -308,7 +308,7 @@ def test_run_bulk_render_error_becomes_row_error(tmp_path: Path):
         schema,
         [{"name": "web01"}],
         templates_dir=tmp_path,
-        prepare_dir=None,
+        hooks_dir=None,
         output_root=tmp_path / "out",
         source="test.csv",
         timestamp=TS,

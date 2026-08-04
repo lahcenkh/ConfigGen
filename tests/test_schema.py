@@ -65,9 +65,9 @@ def test_project_dirs_for_sibling_layout(tmp_path: Path):
     schemas_dir.mkdir()
     schema_path = schemas_dir / "widget.yaml"
     schema_path.write_text("id: widget", encoding="utf-8")
-    templates_dir, prepare_dir = project_dirs_for(schema_path)
+    templates_dir, hooks_dir = project_dirs_for(schema_path)
     assert templates_dir == tmp_path / "templates"
-    assert prepare_dir == tmp_path / "prepare"
+    assert hooks_dir == tmp_path / "hooks"
 
 
 def test_find_schema_files_lists_yaml_and_yml(tmp_path: Path):

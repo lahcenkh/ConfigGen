@@ -1,5 +1,5 @@
 """Config pack export/import (§14 of the build plan) — bundling a schema +
-its templates/prepare hook/preflight checker into a portable
+its templates/hook/preflight checker into a portable
 `.configpack.zip`, and registering one back into a resources/ tree.
 
 Import validates against a temporary extraction first (§2.6's checks, the
@@ -68,13 +68,13 @@ def export_config_pack(
     description: str | None = None,
     sample_values: dict | None = None,
 ) -> Path:
-    """Bundles a schema + its templates/prepare hook/preflight checker into
+    """Bundles a schema + its templates/hook/preflight checker into
     a `.configpack.zip`. Only a *custom* preflight checker is bundled — a
     built-in platform name (`BUILTIN_CHECKS`) has nothing to bundle, since
     every install already has it."""
     schema_path = Path(schema_path)
     schema = load_schema(schema_path)
-    templates_dir, prepare_dir = project_dirs_for(schema_path)
+    templates_dir, hooks_dir = project_dirs_for(schema_path)
     preflight_dir = project_preflight_dir_for(schema_path)
 
     output_path = Path(output_path)
@@ -96,10 +96,10 @@ def export_config_pack(
             template_path = templates_dir / doc.template
             if template_path.is_file():
                 zf.write(template_path, f"templates/{doc.template}")
-        if schema.prepare:
-            hook_path = prepare_dir / f"{schema.prepare}.py"
+        if schema.hook:
+            hook_path = hooks_dir / f"{schema.hook}.py"
             if hook_path.is_file():
-                zf.write(hook_path, f"prepare/{schema.prepare}.py")
+                zf.write(hook_path, f"hooks/{schema.hook}.py")
         if schema.preflight and schema.preflight not in BUILTIN_CHECKS:
             check_path = preflight_dir / f"{schema.preflight}.py"
             if check_path.is_file():
@@ -172,7 +172,7 @@ def import_config_pack(
             tmp_path = Path(tmp)
             tmp_templates = tmp_path / "templates"
             tmp_templates.mkdir()
-            tmp_prepare = tmp_path / "prepare"
+            tmp_hooks = tmp_path / "hooks"
 
             schema = schema_from_dict(data, source_path=tmp_path / "schema.yaml")
             for doc in schema.document_list():
@@ -180,17 +180,15 @@ def import_config_pack(
                 if member in names:
                     (tmp_templates / doc.template).write_bytes(zf.read(member))
 
-            if schema.prepare and f"prepare/{schema.prepare}.py" in names:
-                tmp_prepare.mkdir()
-                (tmp_prepare / f"{schema.prepare}.py").write_bytes(
-                    zf.read(f"prepare/{schema.prepare}.py")
-                )
+            if schema.hook and f"hooks/{schema.hook}.py" in names:
+                tmp_hooks.mkdir()
+                (tmp_hooks / f"{schema.hook}.py").write_bytes(zf.read(f"hooks/{schema.hook}.py"))
 
             try:
                 validate_schema(
                     data,
                     templates_dir=tmp_templates,
-                    prepare_dir=tmp_prepare if schema.prepare else None,
+                    hooks_dir=tmp_hooks if schema.hook else None,
                 )
             except SchemaValidationError as exc:
                 raise ConfigPackError(f"imported schema failed validation: {exc}") from exc
@@ -215,12 +213,10 @@ def import_config_pack(
                 if src.is_file():
                     shutil.copy2(src, templates_dest / doc.template)
 
-            if schema.prepare and (tmp_prepare / f"{schema.prepare}.py").is_file():
-                prepare_dest = resources_root / "prepare"
-                prepare_dest.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(
-                    tmp_prepare / f"{schema.prepare}.py", prepare_dest / f"{schema.prepare}.py"
-                )
+            if schema.hook and (tmp_hooks / f"{schema.hook}.py").is_file():
+                hooks_dest = resources_root / "hooks"
+                hooks_dest.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(tmp_hooks / f"{schema.hook}.py", hooks_dest / f"{schema.hook}.py")
 
             if schema.preflight and f"preflight/{schema.preflight}.py" in names:
                 preflight_dest = resources_root / "preflight"

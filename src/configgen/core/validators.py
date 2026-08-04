@@ -4,8 +4,8 @@ or CLI arg hands us) into typed values ready for a template context.
 Per-field: type coercion, pattern, min/max. Cross-field: `visible_if` /
 `required_if` gate whether a field is shown / mandatory given the current
 values of other fields. Deeper cross-field rules (lookups, "these two must
-differ") belong in a prepare hook, which can reject the whole submission with
-a PrepareError — see docs/prepare-hooks.md.
+differ") belong in a hook, which can reject the whole submission with
+a HookError — see docs/hooks.md.
 """
 
 from __future__ import annotations

@@ -380,30 +380,36 @@ def test_generate_device_provisioning_rejects_unknown_device(tmp_path: Path, cap
     assert "ghost-device" in err
 
 
-def test_generate_prepare_hook_reports_clean_error_when_database_missing(tmp_path: Path, capsys):
-    # A prepare hook that calls services.db.query(...) should fail cleanly,
-    # not with an AttributeError, when there's no queries.yaml at all.
+def test_generate_hook_reports_clean_error_when_database_missing(tmp_path: Path, capsys):
+    # A hook that calls services.db.query(...) should fail cleanly, not with
+    # an AttributeError, when there's no queries.yaml at all. Uses a minimal
+    # schema with no from_db fields, so it's the hook's own db call — not
+    # field-level validation — that hits the missing database.
     project = tmp_path / "project"
     (project / "schemas").mkdir(parents=True)
     (project / "templates").mkdir()
-    (project / "prepare").mkdir()
-    (project / "schemas" / "device_provisioning.yaml").write_text(
-        PROVISIONING_SCHEMA_PATH.read_text(encoding="utf-8"), encoding="utf-8"
+    (project / "hooks").mkdir()
+    (project / "schemas" / "widget.yaml").write_text(
+        "name: Widget\nid: widget\nversion: 1\nstatus: published\n"
+        "hook: widget\ntemplate: widget.j2\n"
+        "fields:\n  - key: name\n    label: Name\n    type: string\n    required: true\n",
+        encoding="utf-8",
     )
-    (project / "templates" / "device_provisioning.j2").write_text(
-        (TEMPLATES_DIR / "device_provisioning.j2").read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    (project / "prepare" / "device_provisioning.py").write_text(
-        (EXAMPLES_ROOT / "prepare" / "device_provisioning.py").read_text(encoding="utf-8"),
+    (project / "templates" / "widget.j2").write_text("{{ cfg_name }}", encoding="utf-8")
+    (project / "hooks" / "widget.py").write_text(
+        "from configgen.hooks import HookError\n\n"
+        "def build(values, context, services):\n"
+        "    services.db.query('anything')\n"
+        "    return {'cfg_name': values['name']}\n",
         encoding="utf-8",
     )
     values_path = tmp_path / "values.json"
-    values_path.write_text(json.dumps(VALID_PROVISIONING_VALUES), encoding="utf-8")
+    values_path.write_text(json.dumps({"name": "web01"}), encoding="utf-8")
 
     code = cli.main(
         [
             "generate",
-            "device_provisioning",
+            "widget",
             "--dir",
             str(project / "schemas"),
             "--values",

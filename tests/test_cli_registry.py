@@ -49,8 +49,8 @@ def test_plugins_check_examples_all_resolve(capsys):
 
 
 def test_plugins_list_reports_orphaned_hook(tmp_path: Path, capsys):
-    project = _make_project(tmp_path)  # widget.yaml has no prepare:
-    _write(project / "prepare" / "unused_hook.py", "def build(v, c, s):\n    return {}\n")
+    project = _make_project(tmp_path)  # widget.yaml has no hook:
+    _write(project / "hooks" / "unused_hook.py", "def build(v, c, s):\n    return {}\n")
 
     code = cli.main(["plugins", "--dir", str(project / "schemas")])
     out = capsys.readouterr().out
@@ -75,12 +75,12 @@ def test_plugins_list_no_orphan_when_filter_used_in_template(tmp_path: Path, cap
 # -- plugins --check ----------------------------------------------------------
 
 
-def test_plugins_check_reports_dangling_prepare_reference(tmp_path: Path, capsys):
+def test_plugins_check_reports_dangling_hook_reference(tmp_path: Path, capsys):
     project = tmp_path / "project"
     _write(
         project / "schemas" / "broken.yaml",
         "name: Broken\nid: broken\nversion: 1\nstatus: published\n"
-        "prepare: ghost_hook\ntemplate: broken.j2\nfields: []\n",
+        "hook: ghost_hook\ntemplate: broken.j2\nfields: []\n",
     )
     _write(project / "templates" / "broken.j2", "hello")
 

@@ -88,6 +88,22 @@ if (-not (Test-Path $exePath)) {
     exit 1
 }
 
+# schemas/templates/data are read AND WRITTEN by the running app (Template
+# Editor creates/edits/deletes them, and writes version history alongside),
+# so - unlike icon.ico/logo.svg - they're deliberately not in ConfigGen.spec's
+# `datas` (that always lands inside _internal/, the wrong place for anything
+# the app writes to; see paths.py). Copied here as a plain file copy, next
+# to the exe, so a fresh build always ships the same starter content dev
+# mode does. This overwrites dist\ConfigGen\resources every build - back up
+# dist\ConfigGen\resources first if you've been running the built exe and
+# want to keep schemas/templates you created there.
+Write-Host "Copying starter schemas/templates/data next to the exe ..."
+$distResources = "dist\ConfigGen\resources"
+New-Item -ItemType Directory -Force -Path $distResources | Out-Null
+foreach ($folder in @("schemas", "templates", "data")) {
+    Copy-Item -Recurse -Force "resources\$folder" $distResources
+}
+
 Write-Host ""
 Write-Host "Built: $exePath"
 Write-Host "Run it with:  .\$exePath"

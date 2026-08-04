@@ -1,11 +1,12 @@
-name: "HA Pair Base Config"
+name: "Switch Dual VRRP - Huawei"
 id: ha_pair_config
 version: 1
 status: published
-description: "Multi-document example: one schema, two related outputs. A single form generates the primary and backup node configs for a VRRP pair together, sharing the VLAN/subnet/virtual IP but each with its own management IP and VRRP priority. Form-only — no database, no prepare hook."
-tags: ["example", "multi-document", "networking"]
+description: "Multi-document example: one schema, two related outputs. A single form generates the primary and backup node configs for a VRRP pair together, sharing the VLAN/subnet/virtual IP but each with its own management IP and VRRP priority. Form-only — no database, no hook."
+tags: ["example", "multi-document", "networking", "huawei"]
 identity_field: pair_name
-comment_prefix: "!"
+comment_prefix: "#"
+
 documents:
   - key: primary
     label: "Primary Node"
@@ -13,14 +14,35 @@ documents:
   - key: backup
     label: "Backup Node"
     template: ha_pair_backup.j2
+  - key: switch
+    label: "Switch Node"
+    template: switch.j2
+
 fields:
-  - key: pair_name
-    label: "Pair name"
+
+  - key: switch_name
+    label: "Switch Name"
     type: string
-    section: "Identity"
+    section: "Switch Section"
     required: true
     pattern: '^[a-z0-9-]{1,63}$'
-    example: "edge-pair-01"
+    example: "sw-01"
+
+  - key: sw_primary_interface
+    label: "SW Port Primary"
+    type: string
+    section: "Switch Section"
+    required: true
+    pattern: '^GE[0-9]{1,2}\/[0-9]{1,2}\/[0-9]{1,2}$'
+    example: "GE0/0/0"
+
+  - key: sw_backup_interface
+    label: "SW Port Backup"
+    type: string
+    section: "Switch Section"
+    required: true
+    pattern: '^GE[0-9]{1,2}\/[0-9]{1,2}\/[0-9]{1,2}$'
+    example: "GE0/0/0"
 
   - key: shared_vlan
     label: "Shared VLAN"
@@ -37,17 +59,50 @@ fields:
     required: true
     example: "10.40.50.0/24"
 
+  - key: pair_name_primary
+    label: "Pair name Primary"
+    type: string
+    section: "primary"
+    required: true
+    pattern: '^[a-z0-9-]{1,63}$'
+    example: "edge-pair-01"
+
+  - key: pair_name_primary_interface
+    label: "Pair name Port"
+    type: string
+    section: "primary"
+    required: true
+    pattern: '^GE[0-9]{1,2}\/[0-9]{1,2}\/[0-9]{1,2}$'
+    example: "GE0/0/0"
+
   - key: primary_ip
     label: "Primary node IP"
     type: ip
-    section: "Network"
+    section: "primary"
     required: true
+
+  - key: pair_name_backup
+    label: "Pair name Backup"
+    type: string
+    section: "backup"
+    required: true
+    pattern: '^[a-z0-9-]{1,63}$'
+    example: "edge-pair-01"
+
+  - key: pair_name_backup_interface
+    label: "Pair name Port"
+    type: string
+    section: "backup"
+    required: true
+    pattern: '^GE[0-9]{1,2}\/[0-9]{1,2}\/[0-9]{1,2}$'
+    example: "GE0/0/0"
 
   - key: backup_ip
     label: "Backup node IP"
     type: ip
-    section: "Network"
+    section: "backup"
     required: true
+
 
   - key: vrrp_group
     label: "VRRP group"

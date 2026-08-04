@@ -1,5 +1,5 @@
 """Headless entry point. Subcommands land phase by phase; this phase adds
-check / list / generate for form-only (no prepare hook, no DB) configs."""
+check / list / generate for form-only (no hook, no DB) configs."""
 
 from __future__ import annotations
 
@@ -66,8 +66,8 @@ from configgen.core.versioning import (
     restore_version,
     save_version,
 )
+from configgen.hooks import HookError, run_hook, services_for_schema
 from configgen.paths import data_dir, output_dir, schemas_dir, users_db_path
-from configgen.prepare import PrepareError, run_prepare_hook, services_for_schema
 
 
 def _auth_store_for(args: argparse.Namespace) -> AuthStore:
@@ -105,11 +105,11 @@ def _authenticate_actor(args: argparse.Namespace, store: AuthStore) -> User:
 
 def _validate_file(schema_path: Path) -> None:
     data = load_schema_dict(schema_path)
-    templates_dir, prepare_dir = project_dirs_for(schema_path)
+    templates_dir, hooks_dir = project_dirs_for(schema_path)
     validate_schema(
         data,
         templates_dir=templates_dir,
-        prepare_dir=prepare_dir,
+        hooks_dir=hooks_dir,
         known_queries=known_queries_for_schema(schema_path),
     )
 
@@ -117,14 +117,12 @@ def _validate_file(schema_path: Path) -> None:
 def _mismatch_warnings(schema: Schema, templates_dir: Path) -> list[str]:
     """Template variables with no declared source. Advisory only — see
     core/extractor.py for why this can never be a hard failure when a
-    prepare hook is involved."""
+    hook is involved."""
     field_keys = set(schema.field_map())
     warnings: list[str] = []
     for doc in schema.document_list():
         variables = extract_variables_from_file(templates_dir / doc.template)
-        for status in classify_variables(
-            variables, field_keys, has_prepare_hook=bool(schema.prepare)
-        ):
+        for status in classify_variables(variables, field_keys, has_hook=bool(schema.hook)):
             if status.source == "missing":
                 warnings.append(f"{doc.key}: '{status.name}' has no schema field or hook")
     return warnings
@@ -207,12 +205,12 @@ def cmd_generate(args: argparse.Namespace) -> int:
         return 1
 
     data = load_schema_dict(schema_path)
-    templates_dir, prepare_dir = project_dirs_for(schema_path)
+    templates_dir, hooks_dir = project_dirs_for(schema_path)
     try:
         validate_schema(
             data,
             templates_dir=templates_dir,
-            prepare_dir=prepare_dir,
+            hooks_dir=hooks_dir,
             known_queries=known_queries_for_schema(schema_path),
         )
     except SchemaValidationError as exc:
@@ -263,18 +261,18 @@ def cmd_generate(args: argparse.Namespace) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    if schema.prepare:
+    if schema.hook:
         hook_context = {
             "username": effective_username,
             "schema_id": schema.id,
             "schema_version": schema.version,
         }
         try:
-            context = run_prepare_hook(
-                prepare_dir, schema.prepare, values, hook_context, services_for_schema(schema_path)
+            context = run_hook(
+                hooks_dir, schema.hook, values, hook_context, services_for_schema(schema_path)
             )
-        except PrepareError as exc:
-            print("FAILED prepare hook:", file=sys.stderr)
+        except HookError as exc:
+            print("FAILED hook:", file=sys.stderr)
             for key, message in exc.errors.items():
                 print(f"  - {key}: {message}", file=sys.stderr)
             return 1
@@ -334,12 +332,12 @@ def cmd_bulk(args: argparse.Namespace) -> int:
         return 1
 
     data = load_schema_dict(schema_path)
-    templates_dir, prepare_dir = project_dirs_for(schema_path)
+    templates_dir, hooks_dir = project_dirs_for(schema_path)
     try:
         validate_schema(
             data,
             templates_dir=templates_dir,
-            prepare_dir=prepare_dir,
+            hooks_dir=hooks_dir,
             known_queries=known_queries_for_schema(schema_path),
         )
     except SchemaValidationError as exc:
@@ -411,7 +409,7 @@ def cmd_bulk(args: argparse.Namespace) -> int:
         schema,
         rows,
         templates_dir=templates_dir,
-        prepare_dir=prepare_dir,
+        hooks_dir=hooks_dir,
         output_root=Path(args.output) if args.output else output_dir(),
         source=source,
         username=effective_username,
@@ -660,9 +658,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
         schema = schema_from_dict(data, source_path=args.check)
         field_keys = set(schema.field_map())
         exit_code = 0
-        for status in classify_variables(
-            variables, field_keys, has_prepare_hook=bool(schema.prepare)
-        ):
+        for status in classify_variables(variables, field_keys, has_hook=bool(schema.hook)):
             label = {"field": "OK", "hook": "HOOK", "missing": "MISSING"}[status.source]
             print(f"{status.name}: {label}")
             if status.source == "missing":
@@ -967,7 +963,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_plugins.add_argument("--dir", help="Schemas directory (default: resources/schemas)")
     p_plugins.add_argument(
-        "--check", action="store_true", help="Validate every schema's prepare:/preflight: resolves"
+        "--check", action="store_true", help="Validate every schema's hook:/preflight: resolves"
     )
     p_plugins.set_defaults(func=cmd_plugins)
 

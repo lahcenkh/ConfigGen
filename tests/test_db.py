@@ -48,14 +48,113 @@ def _write_project(tmp_path: Path) -> Path:
 
 def test_load_queries_resolves_db_path_relative_to_yaml(tmp_path: Path):
     queries_path = _write_project(tmp_path)
-    db_path, queries = load_queries(queries_path)
-    assert db_path == tmp_path / "sample.db"
+    databases, queries = load_queries(queries_path)
+    assert databases == {"default": tmp_path / "sample.db"}
     assert set(queries) == {"regions", "device_names", "device", "devices_by_site"}
+    assert all(q.use == "default" for q in queries.values())
 
 
 def test_load_queries_missing_database_key_raises(tmp_path: Path):
     queries_path = tmp_path / "queries.yaml"
     queries_path.write_text(yaml.dump({"queries": {}}), encoding="utf-8")
+    with pytest.raises(DatabaseError):
+        load_queries(queries_path)
+
+
+# -- multiple databases (`databases:` + per-query `use:`) -------------------
+
+
+def _write_multi_db_project(tmp_path: Path) -> Path:
+    _build_sample_db(tmp_path / "inventory.db")
+    conn = sqlite3.connect(tmp_path / "devices.db")
+    conn.executescript("CREATE TABLE devices (name TEXT NOT NULL, vendor TEXT NOT NULL);")
+    conn.execute("INSERT INTO devices (name, vendor) VALUES ('edge-01', 'Acme')")
+    conn.commit()
+    conn.close()
+
+    queries_path = tmp_path / "queries.yaml"
+    queries_path.write_text(
+        yaml.dump(
+            {
+                "databases": {"inv": "inventory.db", "dev": "devices.db"},
+                "queries": {
+                    "regions": {
+                        "use": "inv",
+                        "sql": "SELECT DISTINCT region FROM sites ORDER BY region",
+                        "returns": "scalar_list",
+                    },
+                    "device": {
+                        "use": "dev",
+                        "sql": "SELECT * FROM devices WHERE name = :name",
+                        "returns": "row",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return queries_path
+
+
+def test_load_queries_resolves_multiple_database_paths(tmp_path: Path):
+    queries_path = _write_multi_db_project(tmp_path)
+    databases, queries = load_queries(queries_path)
+    assert databases == {"inv": tmp_path / "inventory.db", "dev": tmp_path / "devices.db"}
+    assert queries["regions"].use == "inv"
+    assert queries["device"].use == "dev"
+
+
+def test_database_query_routes_to_the_right_database(tmp_path: Path):
+    database = Database.from_queries_file(_write_multi_db_project(tmp_path))
+    assert database.query("regions") == ["us-east", "us-west"]
+    assert database.query("device", name="edge-01") == {"name": "edge-01", "vendor": "Acme"}
+
+
+def test_load_queries_query_without_use_and_multiple_databases_raises(tmp_path: Path):
+    queries_path = tmp_path / "queries.yaml"
+    queries_path.write_text(
+        yaml.dump(
+            {
+                "databases": {"inv": "inventory.db", "dev": "devices.db"},
+                "queries": {"regions": {"sql": "SELECT 1", "returns": "scalar_list"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(DatabaseError):
+        load_queries(queries_path)
+
+
+def test_load_queries_unknown_use_raises(tmp_path: Path):
+    queries_path = tmp_path / "queries.yaml"
+    queries_path.write_text(
+        yaml.dump(
+            {
+                "databases": {"inv": "inventory.db"},
+                "queries": {
+                    "regions": {"use": "ghost", "sql": "SELECT 1", "returns": "scalar_list"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(DatabaseError):
+        load_queries(queries_path)
+
+
+def test_load_queries_both_database_and_databases_raises(tmp_path: Path):
+    queries_path = tmp_path / "queries.yaml"
+    queries_path.write_text(
+        yaml.dump({"database": "sample.db", "databases": {"inv": "inventory.db"}, "queries": {}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(DatabaseError):
+        load_queries(queries_path)
+
+
+def test_load_queries_databases_must_be_a_non_empty_mapping(tmp_path: Path):
+    queries_path = tmp_path / "queries.yaml"
+    queries_path.write_text(yaml.dump({"databases": {}, "queries": {}}), encoding="utf-8")
     with pytest.raises(DatabaseError):
         load_queries(queries_path)
 

@@ -8,7 +8,7 @@ vlan {{ vlan_id }}
 !
 {% if enable_ospf %}
 router ospf {{ ospf_process_id }}
- network {{ mgmt_ip.ip }} {{ mgmt_ip.netmask | to_wildcard }} area {{ ospf_area }}
+ network {{ mgmt_ip.ip }} {{ mgmt_ip.netmask | to_wildcard}} area {{ ospf_area }}
 !
 {% endif %}
 ntp server {{ ntp_server }}

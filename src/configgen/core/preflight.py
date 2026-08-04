@@ -143,7 +143,7 @@ BUILTIN_CHECKS: dict[str, CheckFn] = {
 
 def load_custom_check(preflight_dir: str | Path, platform: str) -> CheckFn | None:
     """A project's own `preflight/<platform>.py`, loaded from disk the same
-    way a prepare hook is — never inside the installed package. Returns
+    way a hook is — never inside the installed package. Returns
     None if the project has no such file (or it has no `check` function)."""
     module_path = Path(preflight_dir) / f"{platform}.py"
     if not module_path.is_file():

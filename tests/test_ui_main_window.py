@@ -283,6 +283,13 @@ def test_open_about_shows_the_about_dialog(qtbot, tmp_path: Path, monkeypatch):
     window._open_about()  # should not raise
 
 
+def test_open_help_shows_the_help_dialog(qtbot, tmp_path: Path, monkeypatch):
+    window, _, _ = _isolated_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    window._open_help()  # should not raise
+
+
 def test_open_highlight_rules_shows_the_dialog(qtbot, tmp_path: Path, monkeypatch):
     window, _, _ = _isolated_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)

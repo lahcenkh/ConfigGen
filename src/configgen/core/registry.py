@@ -1,14 +1,14 @@
 """Plugin & extension registry (§12 of the build plan): what a project has
-supplied — prepare hooks, custom Jinja filters, and preflight checkers —
-and whether every schema's `prepare:`/`preflight:` reference actually
-resolves to one of them (or, for preflight, to a built-in).
+supplied — hooks, custom Jinja filters, and preflight checkers — and
+whether every schema's `hook:`/`preflight:` reference actually resolves
+to one of them (or, for preflight, to a built-in).
 
 Auto-discovery only; nothing here runs a hook or a check for real (though
 loading `filters.py` and a preflight checker means executing that file,
-the same trust model prepare hooks and custom checks already use
-elsewhere). It just finds what's on disk and cross-references it against
-the schemas and templates that use it, so a typo in `prepare: my_hokk` is
-caught before someone hits Generate.
+the same trust model hooks and custom checks already use elsewhere). It
+just finds what's on disk and cross-references it against the schemas
+and templates that use it, so a typo in `hook: my_hokk` is caught before
+someone hits Generate.
 """
 
 from __future__ import annotations
@@ -47,16 +47,16 @@ class Registry:
 @dataclass
 class ReferenceIssue:
     schema_id: str
-    field: str  # "prepare" | "preflight"
+    field: str  # "hook" | "preflight"
     value: str
     message: str
 
 
-def discover_hooks(prepare_dir: str | Path) -> dict[str, Path]:
-    prepare_dir = Path(prepare_dir)
-    if not prepare_dir.is_dir():
+def discover_hooks(hooks_dir: str | Path) -> dict[str, Path]:
+    hooks_dir = Path(hooks_dir)
+    if not hooks_dir.is_dir():
         return {}
-    return {p.stem: p for p in sorted(prepare_dir.glob("*.py")) if p.stem != "__init__"}
+    return {p.stem: p for p in sorted(hooks_dir.glob("*.py")) if p.stem != "__init__"}
 
 
 def discover_preflight_checks(preflight_dir: str | Path) -> dict[str, Path]:
@@ -93,14 +93,14 @@ def discover_filters(project_root: str | Path) -> dict[str, Path]:
 def build_registry(project_root: str | Path) -> Registry:
     project_root = Path(project_root)
     return Registry(
-        hooks=discover_hooks(project_root / "prepare"),
+        hooks=discover_hooks(project_root / "hooks"),
         filters=discover_filters(project_root),
         preflight=discover_preflight_checks(project_root / "preflight"),
     )
 
 
 def check_references(registry: Registry, schemas_dir: str | Path) -> list[ReferenceIssue]:
-    """Every schema's `prepare:`/`preflight:` must resolve to something
+    """Every schema's `hook:`/`preflight:` must resolve to something
     real — a discovered hook/checker, or (for preflight only) a built-in
     platform."""
     issues: list[ReferenceIssue] = []
@@ -108,11 +108,9 @@ def check_references(registry: Registry, schemas_dir: str | Path) -> list[Refere
         data = load_schema_dict(path)
         schema_id = data.get("id", path.stem)
 
-        prepare = data.get("prepare")
-        if prepare and prepare not in registry.hooks:
-            issues.append(
-                ReferenceIssue(schema_id, "prepare", prepare, f"no hook found for '{prepare}'")
-            )
+        hook = data.get("hook")
+        if hook and hook not in registry.hooks:
+            issues.append(ReferenceIssue(schema_id, "hook", hook, f"no hook found for '{hook}'"))
 
         preflight = data.get("preflight")
         if preflight and preflight not in registry.preflight and preflight not in BUILTIN_CHECKS:
@@ -142,8 +140,8 @@ def find_orphaned_plugins(
     referenced_preflight: set[str] = set()
     for path in find_schema_files(schemas_dir):
         data = load_schema_dict(path)
-        if data.get("prepare"):
-            referenced_hooks.add(data["prepare"])
+        if data.get("hook"):
+            referenced_hooks.add(data["hook"])
         if data.get("preflight"):
             referenced_preflight.add(data["preflight"])
 

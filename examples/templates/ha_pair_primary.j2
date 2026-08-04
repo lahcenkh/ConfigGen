@@ -1,9 +1,12 @@
-hostname {{ pair_name }}-primary
-!
-interface Vlan{{ shared_vlan }}
+#
+sysname {{pair_name_primary}}
+#
+interface {{pair_name_primary_interface}}
+ undo shutdown
  ip address {{ primary_ip }} {{ subnet.netmask }}
- vrrp {{ vrrp_group }} ip {{ vrrp_vip }}
- vrrp {{ vrrp_group }} priority 110
- no shutdown
-!
-end
+ vrrp vrid {{vrrp_group}} virtual-ip vrrp_vip
+ vrrp vrid {{vrrp_group}} authentication-mode md5 YsH_2022
+ vrrp vrid {{vrrp_group}} priority 120
+ vrrp vrid {{vrrp_group}} preempt-mode timer delay 20
+ vrrp recover-delay 20
+return

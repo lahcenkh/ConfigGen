@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from configgen.core.db import DatabaseError, NoDatabase
-from configgen.prepare import NetService, PrepareError, Services, load_hook, run_prepare_hook
+from configgen.hooks import HookError, NetService, Services, load_hook, run_hook
 
 
 class _FakeDatabase:
@@ -18,8 +18,8 @@ class _FakeDatabase:
         raise AssertionError("not used by this test")
 
 
-def test_prepare_error_carries_field_errors():
-    exc = PrepareError({"device_name": "Unknown device"})
+def test_hook_error_carries_field_errors():
+    exc = HookError({"device_name": "Unknown device"})
     assert exc.errors == {"device_name": "Unknown device"}
     assert "device_name" in str(exc)
 
@@ -63,14 +63,14 @@ def test_no_database_raises_clean_error_not_attribute_error():
         stub.all("regions")
 
 
-def test_load_hook_missing_file_raises_prepare_error(tmp_path: Path):
-    with pytest.raises(PrepareError):
+def test_load_hook_missing_file_raises_hook_error(tmp_path: Path):
+    with pytest.raises(HookError):
         load_hook(tmp_path, "does_not_exist")
 
 
-def test_load_hook_without_build_function_raises_prepare_error(tmp_path: Path):
+def test_load_hook_without_build_function_raises_hook_error(tmp_path: Path):
     (tmp_path / "broken.py").write_text("x = 1\n", encoding="utf-8")
-    with pytest.raises(PrepareError):
+    with pytest.raises(HookError):
         load_hook(tmp_path, "broken")
 
 
@@ -84,14 +84,14 @@ def test_load_hook_returns_callable_build_function(tmp_path: Path):
     assert result == {"greeting": "hi world"}
 
 
-def test_run_prepare_hook_end_to_end(tmp_path: Path):
+def test_run_hook_end_to_end(tmp_path: Path):
     (tmp_path / "device_provisioning.py").write_text(
-        "from configgen.prepare import PrepareError\n"
+        "from configgen.hooks import HookError\n"
         "\n"
         "def build(values, context, services):\n"
         "    device = services.db.query('device', name=values['device_name'])\n"
         "    if not device:\n"
-        "        raise PrepareError({'device_name': 'Unknown device'})\n"
+        "        raise HookError({'device_name': 'Unknown device'})\n"
         "    return {\n"
         "        'cfg': {\n"
         "            'name': values['device_name'],\n"
@@ -104,7 +104,7 @@ def test_run_prepare_hook_end_to_end(tmp_path: Path):
     fake_db = _FakeDatabase({"edge-01": {"name": "edge-01", "vendor": "Acme Networks"}})
     services = Services(db=fake_db)
 
-    context = run_prepare_hook(
+    context = run_hook(
         tmp_path,
         "device_provisioning",
         {"device_name": "edge-01", "subnet": "10.20.30.0/24"},
@@ -116,20 +116,20 @@ def test_run_prepare_hook_end_to_end(tmp_path: Path):
     }
 
 
-def test_run_prepare_hook_propagates_prepare_error(tmp_path: Path):
+def test_run_hook_propagates_hook_error(tmp_path: Path):
     (tmp_path / "device_provisioning.py").write_text(
-        "from configgen.prepare import PrepareError\n"
+        "from configgen.hooks import HookError\n"
         "\n"
         "def build(values, context, services):\n"
         "    device = services.db.query('device', name=values['device_name'])\n"
         "    if not device:\n"
-        "        raise PrepareError({'device_name': 'Unknown device'})\n"
+        "        raise HookError({'device_name': 'Unknown device'})\n"
         "    return {}\n",
         encoding="utf-8",
     )
     services = Services(db=_FakeDatabase({}))
-    with pytest.raises(PrepareError):
-        run_prepare_hook(
+    with pytest.raises(HookError):
+        run_hook(
             tmp_path,
             "device_provisioning",
             {"device_name": "ghost", "subnet": "10.20.30.0/24"},

@@ -47,6 +47,7 @@ def test_admin_sees_every_nav_item(qtbot):
         "Import Config Pack",
         "Bulk Generate",
         "About",
+        "Help",
     } <= labels
 
 
@@ -79,6 +80,14 @@ def test_about_button_emits_signal(qtbot):
     qtbot.addWidget(sidebar)
     button = next(b for b in sidebar.findChildren(QPushButton) if b.text() == "About")
     with qtbot.waitSignal(sidebar.aboutRequested, timeout=1000):
+        button.click()
+
+
+def test_help_button_emits_signal(qtbot):
+    sidebar = Sidebar(_user(ROLE_ADMIN), LIGHT, dark=False, auto_update_check=True)
+    qtbot.addWidget(sidebar)
+    button = next(b for b in sidebar.findChildren(QPushButton) if b.text() == "Help")
+    with qtbot.waitSignal(sidebar.helpRequested, timeout=1000):
         button.click()
 
 

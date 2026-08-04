@@ -1,9 +1,9 @@
-hostname {{ pair_name }}-backup
-!
-interface Vlan{{ shared_vlan }}
+#
+sysname {{pair_name_backup}}
+#
+interface {{pair_name_backup_interface}}
+ undo shutdown
  ip address {{ backup_ip }} {{ subnet.netmask }}
- vrrp {{ vrrp_group }} ip {{ vrrp_vip }}
- vrrp {{ vrrp_group }} priority 90
- no shutdown
-!
-end
+ vrrp vrid {{ vrrp_group }} virtual-ip {{ vrrp_vip }}
+ vrrp vrid {{ vrrp_group }} authentication-mode md5 YsH_2022
+return

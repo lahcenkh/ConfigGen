@@ -66,7 +66,7 @@ class Schema:
     description: str | None = None
     tags: list[str] = dc_field(default_factory=list)
     supports_variants: bool = False
-    prepare: str | None = None
+    hook: str | None = None
     preflight: str | None = None
     comment_prefix: str = "!"
     template: str | None = None
@@ -106,7 +106,7 @@ def schema_from_dict(data: dict, source_path: str | Path | None = None) -> Schem
         description=data.get("description"),
         tags=data.get("tags", []),
         supports_variants=data.get("supports_variants", False),
-        prepare=data.get("prepare"),
+        hook=data.get("hook"),
         preflight=data.get("preflight"),
         comment_prefix=data.get("comment_prefix", "!"),
         template=data.get("template"),
@@ -129,11 +129,11 @@ def project_root_for(schema_path: str | Path) -> Path:
 
 
 def project_dirs_for(schema_path: str | Path) -> tuple[Path, Path]:
-    """A schema at `<root>/schemas/foo.yaml` keeps its templates and prepare
-    hooks in sibling `<root>/templates/` and `<root>/prepare/` folders —
+    """A schema at `<root>/schemas/foo.yaml` keeps its templates and hooks
+    in sibling `<root>/templates/` and `<root>/hooks/` folders —
     true both for `resources/` and for a self-contained `examples/` set."""
     root = Path(schema_path).resolve().parent.parent
-    return root / "templates", root / "prepare"
+    return root / "templates", root / "hooks"
 
 
 def project_data_dir_for(schema_path: str | Path) -> Path:

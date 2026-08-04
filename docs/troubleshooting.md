@@ -11,7 +11,7 @@ ERROR: schema 'x' has fields sourced from a database, but no queries.yaml found 
 
 A field declares `from_db:`, but the project has no `data/queries.yaml`
 next to its `schemas/`/`templates/` folders. Either add one (see
-[prepare-hooks.md](prepare-hooks.md#servicesdb-and-queriesyaml)) or drop
+[hooks.md](hooks.md#servicesdb-and-queriesyaml)) or drop
 `from_db:` from the field if it doesn't actually need one. Note: a
 `choice` field with `from_db` but no database configured *doesn't*
 error — it just accepts any value unchecked, for a form-only dev path
@@ -32,9 +32,9 @@ as a warning:
 WARNING: primary: 'typo_var' has no schema field or hook
 ```
 
-If the schema has a `prepare:` hook, this warning is suppressed for
+If the schema has a `hook:` set, this warning is suppressed for
 variables the hook might supply (it can't see inside the hook to know
-for sure) — so a prepare-driven schema needs a real render (or the GUI's
+for sure) — so a hook-driven schema needs a real render (or the GUI's
 **Test Render**) to catch a typo like this, `check` alone won't.
 
 ## "WinError 32" / a database file staying locked
@@ -62,17 +62,17 @@ check whether it's **double**-quoted in the schema YAML — see
 [schema-reference.md](schema-reference.md#the-regex-quoting-gotcha) for
 why that silently breaks `\d`/`\w`/etc.
 
-## "hook not found" / "prepare hook not found"
+## "hook not found"
 
 ```text
 FAILED: schemas/z.yaml
-  - prepare: prepare hook not found: nonexistent_hook (expected .../prepare/nonexistent_hook.py)
+  - hook: hook not found: nonexistent_hook (expected .../hooks/nonexistent_hook.py)
 ```
 
-The schema's `prepare:` value doesn't match a real file. It has to be
-just the name — `prepare: device_provisioning` resolves to
-`prepare/device_provisioning.py`, not the other way around. Also check
-you're editing the *project's* `prepare/` folder (a sibling of
+The schema's `hook:` value doesn't match a real file. It has to be
+just the name — `hook: device_provisioning` resolves to
+`hooks/device_provisioning.py`, not the other way around. Also check
+you're editing the *project's* `hooks/` folder (a sibling of
 `schemas/`), not anywhere inside the installed `configgen` package —
 hooks are never loaded from there.
 

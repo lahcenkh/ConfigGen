@@ -552,7 +552,7 @@ def test_list_without_auth_flags_never_touches_users_db(tmp_path: Path, capsys, 
     code = cli.main(["list", "--dir", str(SCHEMAS_DIR)])
     capsys.readouterr()
     assert code == 0
-    assert not (tmp_path / "users.db").exists()
+    assert not (tmp_path / "resources" / "data" / "users.db").exists()
 
 
 def test_generate_without_auth_flags_never_touches_users_db(tmp_path: Path, capsys, monkeypatch):
@@ -575,7 +575,7 @@ def test_generate_without_auth_flags_never_touches_users_db(tmp_path: Path, caps
     )
     capsys.readouterr()
     assert code == 0
-    assert not (tmp_path / "users.db").exists()
+    assert not (tmp_path / "resources" / "data" / "users.db").exists()
 
 
 # -- generation log ----------------------------------------------------------

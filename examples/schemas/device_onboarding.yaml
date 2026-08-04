@@ -2,7 +2,7 @@ name: "Device Onboarding Record"
 id: device_onboarding
 version: 1
 status: published
-description: "DB-backed example: region is a dropdown and device_name autocompletes from a SQLite database via queries.yaml. No prepare hook — the database only supplies field options, Tier 1 does the rest."
+description: "DB-backed example: region is a dropdown and device_name autocompletes from a SQLite database via queries.yaml. No hook — the database only supplies field options, Tier 1 does the rest."
 tags: ["example", "db-backed"]
 identity_field: device_name
 comment_prefix: "#"

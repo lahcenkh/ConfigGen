@@ -101,6 +101,58 @@ def test_run_without_schema_or_file_shows_warning_and_does_nothing(
     assert dialog.result is None
 
 
+def test_download_template_writes_csv_header_matching_field_keys(
+    qtbot, tmp_path: Path, monkeypatch
+):
+    dialog, _store = _dialog(tmp_path, qtbot, monkeypatch)
+    target = tmp_path / "template.csv"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(target), ""))
+    )
+    dialog._download_template()
+
+    assert target.read_text(encoding="utf-8").strip() == "name,port"
+
+
+def test_download_template_writes_xlsx_header_matching_field_keys(
+    qtbot, tmp_path: Path, monkeypatch
+):
+    import openpyxl
+
+    dialog, _store = _dialog(tmp_path, qtbot, monkeypatch)
+    target = tmp_path / "template.xlsx"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(target), ""))
+    )
+    dialog._download_template()
+
+    workbook = openpyxl.load_workbook(target, read_only=True)
+    rows = list(workbook.active.iter_rows(values_only=True))
+    assert rows == [("name", "port")]
+
+
+def test_download_template_without_schema_shows_warning_and_writes_nothing(
+    qtbot, tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("configgen.paths.app_root", lambda: tmp_path)
+    root = tmp_path / "project"
+    (root / "schemas").mkdir(parents=True)
+    (root / "templates").mkdir()
+    store = AuthStore(tmp_path / "users.db")
+    user = store.get_user("admin")
+
+    dialog = BulkDialog(user, store, [], {}, set())
+    qtbot.addWidget(dialog)
+
+    calls = []
+    monkeypatch.setattr(
+        "configgen.ui.bulk_dialog.QMessageBox.warning",
+        staticmethod(lambda *a, **k: calls.append(a)),
+    )
+    dialog._download_template()
+    assert calls
+
+
 def test_only_visible_schemas_are_offered(qtbot, tmp_path: Path, monkeypatch):
     monkeypatch.setattr("configgen.paths.app_root", lambda: tmp_path)
     root = tmp_path / "project"

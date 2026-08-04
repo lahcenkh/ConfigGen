@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import openpyxl
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -40,8 +41,8 @@ from configgen.core.schema import (
     project_preflight_dir_for,
     project_root_for,
 )
+from configgen.hooks import services_for_schema
 from configgen.paths import output_dir
-from configgen.prepare import services_for_schema
 
 
 class BulkDialog(QDialog):
@@ -72,6 +73,10 @@ class BulkDialog(QDialog):
         for schema in self.schemas:
             self.schema_combo.addItem(schema.name, schema.id)
         schema_row.addWidget(self.schema_combo, stretch=1)
+        download_template_button = QPushButton("Download Input Template")
+        download_template_button.setObjectName("secondary")
+        download_template_button.clicked.connect(self._download_template)
+        schema_row.addWidget(download_template_button)
         layout.addLayout(schema_row)
 
         file_row = QHBoxLayout()
@@ -106,6 +111,37 @@ class BulkDialog(QDialog):
         buttons.addWidget(self.run_button)
         buttons.addWidget(self.export_button)
         layout.addLayout(buttons)
+
+    def _download_template(self) -> None:
+        """A blank input file with just the header row `read_rows()`
+        actually expects (§8: "column headers must match schema field
+        keys") — so a user can fill it in offline and re-upload it via
+        Browse… instead of guessing column names from the schema."""
+        schema = self._selected_schema()
+        if schema is None:
+            QMessageBox.warning(self, "No schema", "Select a schema first.")
+            return
+
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save input template",
+            f"{schema.id}_template.csv",
+            "CSV files (*.csv);;Excel files (*.xlsx)",
+        )
+        if not path_str:
+            return
+
+        headers = [field.key for field in schema.fields]
+        path = Path(path_str)
+        if path.suffix.lower() == ".xlsx":
+            workbook = openpyxl.Workbook()
+            workbook.active.append(headers)
+            workbook.save(path_str)
+        else:
+            with open(path_str, "w", newline="", encoding="utf-8") as fh:
+                csv.writer(fh).writerow(headers)
+
+        self.summary_label.setText(f"Input template saved to {path_str}.")
 
     def _browse(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
@@ -147,7 +183,7 @@ class BulkDialog(QDialog):
             QMessageBox.warning(self, "Database error", str(exc))
             return
 
-        templates_dir, prepare_dir = project_dirs_for(schema_path)
+        templates_dir, hooks_dir = project_dirs_for(schema_path)
         self.progress.setVisible(True)
         self.run_button.setEnabled(False)
         try:
@@ -155,7 +191,7 @@ class BulkDialog(QDialog):
                 schema,
                 rows,
                 templates_dir=templates_dir,
-                prepare_dir=prepare_dir,
+                hooks_dir=hooks_dir,
                 output_root=output_dir(),
                 source=str(self.input_path),
                 username=self.user.username,

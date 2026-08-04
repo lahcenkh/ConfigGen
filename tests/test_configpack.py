@@ -20,7 +20,7 @@ tags:
   - net
   - test
 identity_field: name
-prepare: adjust
+hook: adjust
 preflight: acme_custom
 template: widget.j2
 fields:
@@ -30,8 +30,8 @@ fields:
     required: true
 """
 
-PREPARE_HOOK = """\
-def prepare(values, context, services):
+HOOK_CODE = """\
+def build(values, context, services):
     return values
 """
 
@@ -40,11 +40,11 @@ def _project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     (project / "schemas").mkdir(parents=True)
     (project / "templates").mkdir()
-    (project / "prepare").mkdir()
+    (project / "hooks").mkdir()
     (project / "preflight").mkdir()
     (project / "schemas" / "widget.yaml").write_text(WIDGET_SCHEMA, encoding="utf-8")
     (project / "templates" / "widget.j2").write_text("hello {{ name }}", encoding="utf-8")
-    (project / "prepare" / "adjust.py").write_text(PREPARE_HOOK, encoding="utf-8")
+    (project / "hooks" / "adjust.py").write_text(HOOK_CODE, encoding="utf-8")
     (project / "preflight" / "acme_custom.py").write_text(
         "def check(text):\n    return []\n", encoding="utf-8"
     )
@@ -54,7 +54,7 @@ def _project(tmp_path: Path) -> Path:
 # -- export ---------------------------------------------------------
 
 
-def test_export_bundles_schema_template_and_prepare_hook(tmp_path: Path):
+def test_export_bundles_schema_template_and_hook(tmp_path: Path):
     project = _project(tmp_path)
     output = export_config_pack(
         project / "schemas" / "widget.yaml",
@@ -69,7 +69,7 @@ def test_export_bundles_schema_template_and_prepare_hook(tmp_path: Path):
         assert names == {
             "schema.yaml",
             "templates/widget.j2",
-            "prepare/adjust.py",
+            "hooks/adjust.py",
             "preflight/acme_custom.py",
             "manifest.json",
         }
@@ -89,7 +89,7 @@ def test_export_skips_builtin_preflight_check(tmp_path: Path):
     (project / "templates").mkdir()
     (project / "schemas" / "widget.yaml").write_text(
         WIDGET_SCHEMA.replace("preflight: acme_custom", "preflight: junos").replace(
-            "prepare: adjust\n", ""
+            "hook: adjust\n", ""
         ),
         encoding="utf-8",
     )
@@ -122,7 +122,7 @@ def test_export_bundles_sample_values(tmp_path: Path):
 # -- import: happy path ---------------------------------------------------------
 
 
-def test_import_registers_schema_template_and_prepare_hook(tmp_path: Path):
+def test_import_registers_schema_template_and_hook(tmp_path: Path):
     project = _project(tmp_path)
     pack = export_config_pack(project / "schemas" / "widget.yaml", tmp_path / "widget.zip")
 
@@ -134,7 +134,7 @@ def test_import_registers_schema_template_and_prepare_hook(tmp_path: Path):
     assert result.schema_path == target / "schemas" / "widget.yaml"
     assert (target / "schemas" / "widget.yaml").is_file()
     assert (target / "templates" / "widget.j2").read_text(encoding="utf-8") == "hello {{ name }}"
-    assert (target / "prepare" / "adjust.py").is_file()
+    assert (target / "hooks" / "adjust.py").is_file()
     assert (target / "preflight" / "acme_custom.py").is_file()
 
 

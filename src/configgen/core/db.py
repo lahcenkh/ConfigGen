@@ -2,7 +2,7 @@
 
 The core knows nothing about any particular table or schema. A project
 supplies its own `queries.yaml` naming SQL statements; `from_db:` in a
-schema field and `services.db.query(...)` in a prepare hook both resolve
+schema field and `services.db.query(...)` in a hook both resolve
 through this module. Every call opens its own connection and closes it
 before returning — the fix for the Windows file-lock issue (§19) — since
 that's cheap for form submission and Generate calls; a session-scoped
@@ -23,6 +23,11 @@ from configgen.core.schema import Schema, project_data_dir_for
 
 _PARAM_RE = re.compile(r":(\w+)")
 
+# The alias a legacy single-`database:` queries.yaml is filed under
+# internally, so every query has a `use:` to resolve regardless of which
+# top-level form the file used. Never seen by a queries.yaml author.
+_SINGLE_DB_ALIAS = "default"
+
 
 class DatabaseError(Exception):
     pass
@@ -33,42 +38,71 @@ class QueryDef:
     name: str
     sql: str
     returns: str  # "scalar_list" | "row" | "rows"
+    use: str  # which database alias this query runs against
 
 
-def load_queries(queries_path: str | Path) -> tuple[Path, dict[str, QueryDef]]:
-    """Reads a project's queries.yaml. The database path inside it is
-    resolved relative to queries.yaml's own directory."""
+def load_queries(queries_path: str | Path) -> tuple[dict[str, Path], dict[str, QueryDef]]:
+    """Reads a project's queries.yaml. Database paths inside it are
+    resolved relative to queries.yaml's own directory.
+
+    Supports two top-level forms: a single `database: path.db` (every
+    query implicitly uses it), or a multi-database `databases: {alias:
+    path.db, ...}` where each query names which one it needs via `use:`
+    (required whenever more than one database is configured)."""
     queries_path = Path(queries_path)
     try:
         data = yaml.safe_load(queries_path.read_text(encoding="utf-8")) or {}
     except OSError as exc:
         raise DatabaseError(f"could not read {queries_path}: {exc}") from exc
 
-    if "database" not in data:
-        raise DatabaseError(f"{queries_path} is missing a top-level 'database' key")
+    if "database" in data and "databases" in data:
+        raise DatabaseError(f"{queries_path} has both 'database' and 'databases' — use only one")
+    if "databases" in data:
+        raw_databases = data["databases"]
+        if not isinstance(raw_databases, dict) or not raw_databases:
+            raise DatabaseError(
+                f"{queries_path} 'databases' must be a non-empty mapping of alias: path"
+            )
+        databases = {alias: queries_path.parent / path for alias, path in raw_databases.items()}
+    elif "database" in data:
+        databases = {_SINGLE_DB_ALIAS: queries_path.parent / data["database"]}
+    else:
+        raise DatabaseError(f"{queries_path} is missing a top-level 'database' or 'databases' key")
 
-    db_path = queries_path.parent / data["database"]
-    queries = {
-        name: QueryDef(name=name, sql=q["sql"], returns=q.get("returns", "rows"))
-        for name, q in (data.get("queries") or {}).items()
-    }
-    return db_path, queries
+    queries: dict[str, QueryDef] = {}
+    for name, q in (data.get("queries") or {}).items():
+        use = q.get("use")
+        if use is None:
+            if len(databases) > 1:
+                raise DatabaseError(
+                    f"query '{name}' in {queries_path} must set 'use:' — "
+                    f"multiple databases are configured ({', '.join(sorted(databases))})"
+                )
+            use = next(iter(databases))
+        elif use not in databases:
+            raise DatabaseError(
+                f"query '{name}' in {queries_path} uses unknown database '{use}' "
+                f"(configured: {', '.join(sorted(databases))})"
+            )
+        queries[name] = QueryDef(name=name, sql=q["sql"], returns=q.get("returns", "rows"), use=use)
+    return databases, queries
 
 
 class Database:
-    def __init__(self, db_path: str | Path, queries: dict[str, QueryDef]):
-        self.db_path = Path(db_path)
+    def __init__(self, databases: dict[str, str | Path], queries: dict[str, QueryDef]):
+        self.databases = {alias: Path(path) for alias, path in databases.items()}
         self.queries = queries
 
     @classmethod
     def from_queries_file(cls, queries_path: str | Path) -> Database:
-        db_path, queries = load_queries(queries_path)
-        return cls(db_path, queries)
+        databases, queries = load_queries(queries_path)
+        return cls(databases, queries)
 
-    def _connect(self) -> sqlite3.Connection:
-        if not self.db_path.is_file():
-            raise DatabaseError(f"database file not found: {self.db_path}")
-        conn = sqlite3.connect(str(self.db_path))
+    def _connect(self, alias: str) -> sqlite3.Connection:
+        db_path = self.databases[alias]
+        if not db_path.is_file():
+            raise DatabaseError(f"database file not found: {db_path}")
+        conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -79,7 +113,7 @@ class Database:
         if query_name not in self.queries:
             raise DatabaseError(f"unknown query '{query_name}'")
         query_def = self.queries[query_name]
-        conn = self._connect()
+        conn = self._connect(query_def.use)
         try:
             rows = conn.execute(query_def.sql, params).fetchall()
         except sqlite3.Error as exc:
@@ -97,7 +131,7 @@ class Database:
 class NoDatabase:
     """Stands in for `Services.db` when a project has no queries.yaml.
 
-    A prepare hook that calls `services.db.query(...)` unconditionally would
+    A hook that calls `services.db.query(...)` unconditionally would
     otherwise hit an AttributeError on `None` — this raises the same
     DatabaseError a real Database would for an unreachable file, so the
     error a hook author sees is always the same shape."""

@@ -66,7 +66,7 @@ def test_extract_variables_from_file(tmp_path: Path):
 
 
 def test_classify_variables_field_hook_missing():
-    statuses = classify_variables(["a", "b", "c"], field_keys={"a"}, has_prepare_hook=False)
+    statuses = classify_variables(["a", "b", "c"], field_keys={"a"}, has_hook=False)
     assert statuses == [
         VariableStatus(name="a", source="field"),
         VariableStatus(name="b", source="missing"),
@@ -74,8 +74,8 @@ def test_classify_variables_field_hook_missing():
     ]
 
 
-def test_classify_variables_missing_becomes_hook_when_prepare_declared():
-    statuses = classify_variables(["a", "b"], field_keys={"a"}, has_prepare_hook=True)
+def test_classify_variables_missing_becomes_hook_when_hook_declared():
+    statuses = classify_variables(["a", "b"], field_keys={"a"}, has_hook=True)
     assert statuses == [
         VariableStatus(name="a", source="field"),
         VariableStatus(name="b", source="hook"),

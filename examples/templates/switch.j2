@@ -1,0 +1,14 @@
+#
+sysname {{switch_name}}
+#
+vlan {{shared_vlan}}
+#
+interface {{sw_primary_interface}}
+ undo shutdown
+ port default vlan {{shared_vlan}}
+#
+interface {{sw_backup_interface}}
+ undo shutdown
+ port default vlan {{shared_vlan}}
+#
+return

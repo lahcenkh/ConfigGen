@@ -52,7 +52,7 @@ handing back to whoever supplied the data.
 ## Database-driven batches
 
 Instead of a file, a named query from the project's `data/queries.yaml`
-(§ [prepare-hooks.md](prepare-hooks.md#servicesdb-and-queriesyaml)) can
+(§ [hooks.md](hooks.md#servicesdb-and-queriesyaml)) can
 supply the rows directly — the query must be declared `returns: rows`,
 and each returned row's columns are mapped to schema fields by name,
 exactly like a CSV's columns:

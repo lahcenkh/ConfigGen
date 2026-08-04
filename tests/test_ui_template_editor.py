@@ -212,6 +212,28 @@ def test_test_render_opens_and_produces_output(qtbot, tmp_path: Path, monkeypatc
 # -- lifecycle ---------------------------------------------------------
 
 
+def test_rename_writes_the_new_name_and_persists(qtbot, tmp_path: Path, monkeypatch):
+    window, _store = _editor(tmp_path, qtbot)
+    window.schema_list.setCurrentRow(0)
+    assert window.current_schema.name == "Widget"
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("New Name", True)))
+    window._rename_schema()
+
+    assert window.current_schema.name == "New Name"
+    assert 'name: "New Name"' in window.current_path.read_text(encoding="utf-8")
+
+
+def test_rename_cancelled_leaves_the_name_unchanged(qtbot, tmp_path: Path, monkeypatch):
+    window, _store = _editor(tmp_path, qtbot)
+    window.schema_list.setCurrentRow(0)
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Ignored", False)))
+    window._rename_schema()
+
+    assert window.current_schema.name == "Widget"
+
+
 def test_publish_unpublish_deprecate_cycle(qtbot, tmp_path: Path):
     window, _store = _editor(tmp_path, qtbot)
     window.schema_list.setCurrentRow(0)

@@ -2,7 +2,7 @@ name: "Linux Server Base Provisioning"
 id: server_provisioning
 version: 1
 status: published
-description: "Form-only example: base provisioning script for a new Linux server. No database, no prepare hook — proves Tier 1 alone is enough for a simple config."
+description: "Form-only example: base provisioning script for a new Linux server. No database, no hook — proves Tier 1 alone is enough for a simple config."
 tags: ["example", "form-only", "linux"]
 identity_field: hostname
 comment_prefix: "#"

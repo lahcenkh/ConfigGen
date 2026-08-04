@@ -114,16 +114,16 @@ def test_template_present_on_disk(tmp_path: Path):
     validate_schema(BASE, templates_dir=tmp_path)
 
 
-def test_prepare_hook_missing_on_disk(tmp_path: Path):
-    data = {**BASE, "prepare": "widget"}
+def test_hook_missing_on_disk(tmp_path: Path):
+    data = {**BASE, "hook": "widget"}
     with pytest.raises(SchemaValidationError):
-        validate_schema(data, prepare_dir=tmp_path)
+        validate_schema(data, hooks_dir=tmp_path)
 
 
-def test_prepare_hook_present_on_disk(tmp_path: Path):
+def test_hook_present_on_disk(tmp_path: Path):
     (tmp_path / "widget.py").write_text("", encoding="utf-8")
-    data = {**BASE, "prepare": "widget"}
-    validate_schema(data, prepare_dir=tmp_path)
+    data = {**BASE, "hook": "widget"}
+    validate_schema(data, hooks_dir=tmp_path)
 
 
 def test_from_db_unknown_query():

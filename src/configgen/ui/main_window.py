@@ -1,7 +1,7 @@
 """Stacked dashboard/generator, preview, diff, save, keyboard shortcuts
 (§15/§15.2).
 
-Every action here — validate, run the prepare hook, render, preflight,
+Every action here — validate, run the hook, render, preflight,
 save, log — calls straight into the same core functions the CLI uses.
 This module's job is only to collect form input and show results; it
 never re-implements what "valid"/"rendered"/"saved" mean.
@@ -49,8 +49,8 @@ from configgen.core.schema import (
     project_preflight_dir_for,
     project_root_for,
 )
+from configgen.hooks import HookError, run_hook, services_for_schema
 from configgen.paths import output_dir
-from configgen.prepare import PrepareError, run_prepare_hook, services_for_schema
 from configgen.ui import theme
 from configgen.ui.about import AboutDialog
 from configgen.ui.bulk_dialog import BulkDialog
@@ -58,6 +58,7 @@ from configgen.ui.config_pack_import import ImportConfigPackDialog
 from configgen.ui.dashboard import Dashboard
 from configgen.ui.form_builder import FormBuilder
 from configgen.ui.generation_log import GenerationLogDialog
+from configgen.ui.help import HelpDialog
 from configgen.ui.highlight_rules_dialog import HighlightRulesDialog
 from configgen.ui.highlighters import ConfigHighlighter
 from configgen.ui.settings import auto_update_check_enabled, set_auto_update_check_enabled
@@ -318,6 +319,7 @@ class MainWindow(QMainWindow):
         sidebar.bulkGenerateRequested.connect(self._open_bulk_dialog)
         sidebar.generationLogRequested.connect(self._open_generation_log)
         sidebar.aboutRequested.connect(self._open_about)
+        sidebar.helpRequested.connect(self._open_help)
         sidebar.highlightRulesRequested.connect(self._open_highlight_rules)
         sidebar.darkModeToggled.connect(self._on_dark_mode_toggled)
         sidebar.autoUpdateToggled.connect(set_auto_update_check_enabled)
@@ -372,6 +374,9 @@ class MainWindow(QMainWindow):
 
     def _open_about(self) -> None:
         AboutDialog(self).exec()
+
+    def _open_help(self) -> None:
+        HelpDialog(self).exec()
 
     def _open_highlight_rules(self) -> None:
         HighlightRulesDialog(self).exec()
@@ -477,24 +482,24 @@ class MainWindow(QMainWindow):
             return None
 
         schema, schema_path = view.schema, view.schema_path
-        templates_dir, prepare_dir = project_dirs_for(schema_path)
+        templates_dir, hooks_dir = project_dirs_for(schema_path)
         context = values
 
-        if schema.prepare:
+        if schema.hook:
             try:
                 services = services_for_schema(schema_path)
-                context = run_prepare_hook(
-                    prepare_dir,
-                    schema.prepare,
+                context = run_hook(
+                    hooks_dir,
+                    schema.hook,
                     values,
                     {"username": self.user.username},
                     services,
                 )
-            except PrepareError as exc:
+            except HookError as exc:
                 for key, message in exc.errors.items():
                     if key in view.form.widgets:
                         view.form.widgets[key].set_error(message)
-                view.status_label.setText("Prepare hook rejected this submission.")
+                view.status_label.setText("Hook rejected this submission.")
                 return None
             except DatabaseError as exc:
                 view.status_label.setText(str(exc))

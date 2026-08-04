@@ -34,7 +34,7 @@ Config Engineer is the daily-use role: fill in forms, generate configs,
 see your own history. Template Engineer adds template authoring on top.
 Admin adds user/group management and the two operations everyone else is
 explicitly locked out of — deleting templates, and importing config
-packs (importing can add executable code via a prepare hook, so it's
+packs (importing can add executable code via a hook, so it's
 never delegated).
 
 ## Groups

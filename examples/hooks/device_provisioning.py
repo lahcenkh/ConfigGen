@@ -1,14 +1,14 @@
-"""Prepare hook for device_provisioning.yaml — looks up the device's vendor
+"""Hook for device_provisioning.yaml — looks up the device's vendor
 in the database and derives its management IP from the submitted subnet.
-Pure Python, unit-testable in isolation (see docs/prepare-hooks.md)."""
+Pure Python, unit-testable in isolation (see docs/hooks.md)."""
 
-from configgen.prepare import PrepareError
+from configgen.hooks import HookError
 
 
 def build(values: dict, context: dict, services) -> dict:
     device = services.db.query("device", name=values["device_name"])
     if not device:
-        raise PrepareError({"device_name": f"Unknown device '{values['device_name']}'"})
+        raise HookError({"device_name": f"Unknown device '{values['device_name']}'"})
 
     return {
         "cfg": {

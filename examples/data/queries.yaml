@@ -1,17 +1,31 @@
 # Example project db config (§5.1). In a real project this file — and the
 # database it points at — are user-supplied and not committed; this one
 # ships only so the device_onboarding example can render headless.
-database: sample.db
+databases:
+  inv: inventory.db
+  sample: sample.db
 queries:
   regions:
+    use: sample
     sql: "SELECT DISTINCT region FROM sites ORDER BY region"
     returns: scalar_list
   device_names:
+    use: sample
     sql: "SELECT name FROM devices ORDER BY name"
     returns: scalar_list
   device:
+    use: sample
     sql: "SELECT * FROM devices WHERE name = :name"
     returns: row
   devices_by_site:
+    use: sample
     sql: "SELECT * FROM devices WHERE site = :site"
+    returns: rows
+  switch_names:
+    use: inv
+    sql: "SELECT name FROM switches ORDER BY name"
+    returns: scalar_list
+  switch_vlans:
+    use: inv
+    sql: "SELECT vlan_id, name, subnet FROM vlans WHERE switch = :switch ORDER BY vlan_id"
     returns: rows

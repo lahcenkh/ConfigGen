@@ -5,7 +5,7 @@ Every config in ConfigGen is three files, at most:
 ```text
 resources/schemas/<id>.yaml     # required - the form + metadata
 resources/templates/<id>.j2     # required - the Jinja2 output
-resources/prepare/<id>.py       # optional - a build() hook for derived/DB-backed values
+resources/hooks/<id>.py         # optional - a build() hook for derived/DB-backed values
 ```
 
 Nothing else changes. No core code, no registration step, no restart —
@@ -17,7 +17,7 @@ complexity: **form-only**, **multi-document**, and **DB-backed**. All
 three live in `examples/` and you can run every command below yourself.
 For the fourth kind — a *derived* config, where a Python hook computes
 values instead of a form field — see
-[prepare-hooks.md](prepare-hooks.md). For generating many configs from a
+[hooks.md](hooks.md). For generating many configs from a
 CSV or a database query instead of typing one form at a time, see
 [bulk-generation.md](bulk-generation.md). For every field type and schema
 option in detail, see [schema-reference.md](schema-reference.md).
@@ -65,7 +65,7 @@ The template is plain Jinja2, referencing the schema's field keys. An
 (see [schema-reference.md](schema-reference.md#field-types) for what
 each field type gives a template); `to_wildcard` here is a custom filter
 the project supplies itself in a sibling `filters.py`
-(`examples/filters.py` — see [prepare-hooks.md](prepare-hooks.md#custom-filters)):
+(`examples/filters.py` — see [hooks.md](hooks.md#custom-filters)):
 
 ```jinja
 hostname {{ hostname }}
@@ -206,7 +206,7 @@ unlisted region is rejected); `lookup` fields only *suggest* — free text
 that doesn't match anything in the database is still accepted, useful
 for a device that hasn't been inventoried yet. See
 [schema-reference.md](schema-reference.md#from_db) for the full
-`from_db` shape and [prepare-hooks.md](prepare-hooks.md) for the next
+`from_db` shape and [hooks.md](hooks.md) for the next
 step up: a hook that *uses* `services.db` to derive values no form field
 holds directly (`examples/schemas/device_provisioning.yaml` is that
 example).
