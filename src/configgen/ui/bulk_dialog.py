@@ -12,6 +12,7 @@ already uses for a single row.
 from __future__ import annotations
 
 import csv
+import shutil
 from pathlib import Path
 
 import openpyxl
@@ -108,8 +109,13 @@ class BulkDialog(QDialog):
         self.export_button.setObjectName("secondary")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self._export_errors)
+        self.copy_configs_button = QPushButton("Copy Configs To…")
+        self.copy_configs_button.setObjectName("secondary")
+        self.copy_configs_button.setEnabled(False)
+        self.copy_configs_button.clicked.connect(self._copy_configs_to_folder)
         buttons.addWidget(self.run_button)
         buttons.addWidget(self.export_button)
+        buttons.addWidget(self.copy_configs_button)
         layout.addLayout(buttons)
 
     def _download_template(self) -> None:
@@ -226,6 +232,23 @@ class BulkDialog(QDialog):
             self.error_table.setItem(row, 0, QTableWidgetItem(str(row_error.row_number)))
             self.error_table.setItem(row, 1, QTableWidgetItem(messages))
         self.export_button.setEnabled(bool(self.result.row_errors))
+        self.copy_configs_button.setEnabled(self.result.valid_count > 0)
+
+    def _copy_configs_to_folder(self) -> None:
+        """Copies just the rendered .txt configs from this batch to a
+        second location of the user's choosing — the per-row .json
+        profiles and batch_manifest.json (bookkeeping, needed for Reopen
+        and the audit trail) stay behind in the regular output/ tree."""
+        if self.result is None or self.result.valid_count == 0:
+            return
+        dest_str = QFileDialog.getExistingDirectory(self, "Copy batch configs to")
+        if not dest_str:
+            return
+        dest = Path(dest_str)
+        txt_files = sorted(self.result.output_dir.glob("*.txt"))
+        for txt_file in txt_files:
+            shutil.copy2(txt_file, dest / txt_file.name)
+        self.summary_label.setText(f"{len(txt_files)} config file(s) copied to {dest_str}.")
 
     def _export_errors(self) -> None:
         if self.result is None or not self.result.row_errors:

@@ -55,6 +55,7 @@ def test_all_valid_rows_generate_and_log(qtbot, tmp_path: Path, monkeypatch):
     assert dialog.result.error_count == 0
     assert dialog.error_table.rowCount() == 0
     assert not dialog.export_button.isEnabled()
+    assert dialog.copy_configs_button.isEnabled()
     assert "2 valid, 0 errors" in dialog.summary_label.text()
 
     entries = store.list_generation_log(dialog.user)
@@ -85,6 +86,40 @@ def test_invalid_rows_populate_error_table_and_export(qtbot, tmp_path: Path, mon
     content = out_csv.read_text(encoding="utf-8")
     assert "row_number,errors" in content
     assert "port" in content
+
+
+def test_copy_configs_to_folder_copies_only_txt_files(qtbot, tmp_path: Path, monkeypatch):
+    dialog, _store = _dialog(tmp_path, qtbot, monkeypatch)
+    rows_path = tmp_path / "rows.csv"
+    rows_path.write_text("name,port\nweb01,22\nweb02,23\n", encoding="utf-8")
+    dialog.input_path = rows_path
+    dialog._run()
+    assert dialog.result.valid_count == 2
+
+    dest = tmp_path / "elsewhere"
+    dest.mkdir()
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(dest))
+    )
+    dialog._copy_configs_to_folder()
+
+    copied = sorted(dest.iterdir())
+    assert len(copied) == 2
+    assert all(p.suffix == ".txt" for p in copied)
+    assert not list(dest.glob("*.json"))
+    assert "2 config file(s) copied" in dialog.summary_label.text()
+
+
+def test_copy_configs_without_a_run_does_nothing(qtbot, tmp_path: Path, monkeypatch):
+    dialog, _store = _dialog(tmp_path, qtbot, monkeypatch)
+    assert not dialog.copy_configs_button.isEnabled()
+
+    calls = []
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: calls.append(1) or "")
+    )
+    dialog._copy_configs_to_folder()  # no result yet — should not raise
+    assert not calls
 
 
 def test_run_without_schema_or_file_shows_warning_and_does_nothing(

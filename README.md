@@ -10,6 +10,9 @@ the docs), but there's nothing network-specific in the engine — anyone can
 add a config by dropping in a schema file, a template, and (optionally) a
 small Python hook. No changes to the core.
 
+default credentials:
+- username: admin
+- password: admin
 
 ![Login](docs/screenshots/login.png)
 ![Dashboard](docs/screenshots/dashboard.png)
