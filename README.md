@@ -1,6 +1,5 @@
 # ConfigGen
 
-[![CI](https://github.com/ConfigGen/ConfigGen/actions/workflows/ci.yml/badge.svg)](https://github.com/ConfigGen/ConfigGen/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 
@@ -11,9 +10,12 @@ the docs), but there's nothing network-specific in the engine — anyone can
 add a config by dropping in a schema file, a template, and (optionally) a
 small Python hook. No changes to the core.
 
-|  |  |
-|---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Generator](docs/screenshots/generator.png) |
+
+![Login](docs/screenshots/login.png) |
+![Dashboard](docs/screenshots/dashboard.png)
+![Generator](docs/screenshots/generator.png) |
+![template_editor](docs/screenshots/template_editor.png)
+![users](docs/screenshots/user_admin.png)
 
 Config Engineers fill in a form and get a validated, rendered config with
 one click. Template Engineers write the schema + Jinja template that
@@ -51,19 +53,68 @@ configgen generate examples/schemas/router_base_config.yaml \
 
 - Python 3.10+
 - `pip install -e ".[gui]"` for the desktop app, `pip install -e .` for
-  CLI-only (see [packaging/Dockerfile](packaging/Dockerfile) for a
-  ready-made CLI-only container — `pip install .` there never pulls in
-  PySide6/Qt)
-- A packaged Windows exe is built via
-  [packaging/ConfigGen.spec](packaging/ConfigGen.spec)
-  (`pyinstaller packaging/ConfigGen.spec`). Signing it is documented in
-  [packaging/sign.ps1](packaging/sign.ps1) — read that file's notes
-  first: a self-signed exe still shows an "unknown publisher" warning on
-  any machine that hasn't explicitly trusted the certificate
-  ([packaging/deploy-cert.ps1](packaging/deploy-cert.ps1)); only a paid
-  EV certificate clears that everywhere automatically. For a public,
-  open-source tool, "just run from source" is the honest zero-friction
-  path.
+  CLI-only
+- Windows exe: see [Building the Windows exe](#building-the-windows-exe)
+  below
+- Docker (CLI-only, no Qt): see [Docker](#docker) below
+
+## Building the Windows exe
+
+```powershell
+git clone https://github.com/ConfigGen/ConfigGen.git
+cd ConfigGen
+python -m venv .venv
+.venv\Scripts\pip install -e ".[dev]"
+.\packaging\build.ps1
+```
+
+[packaging/build.ps1](packaging/build.ps1) wraps
+[packaging/ConfigGen.spec](packaging/ConfigGen.spec) end to end: it
+installs PyInstaller into the venv if it's missing, regenerates
+`packaging/icon.ico` from `resources/branding/logo.svg`, runs PyInstaller
+(a one-folder build, not `--onefile` — faster startup, easier to inspect
+what actually shipped), and copies starter `resources/schemas`,
+`resources/templates`, and `resources/data` next to the built exe (that
+content is written to at runtime by the Template Editor, so it can't live
+inside PyInstaller's own bundle — see `paths.py`). The result lands at
+`dist\ConfigGen\ConfigGen.exe`; keep the whole `dist\ConfigGen\` folder
+together when you move or zip it up — the exe depends on its sibling
+`_internal\` folder.
+
+Useful flags:
+
+```powershell
+.\packaging\build.ps1 -Clean                             # wipe build/ and dist/ first, from scratch
+.\packaging\build.ps1 -Python C:\Python312\python.exe     # build with a specific interpreter
+.\packaging\build.ps1 -Sign                               # build, then run sign.ps1 on the result
+```
+
+The exe is unsigned by default. See [packaging/sign.ps1](packaging/sign.ps1)
+for self-signing — read its notes first: a self-signed exe still shows an
+"unknown publisher" warning on any machine that hasn't explicitly trusted
+the certificate ([packaging/deploy-cert.ps1](packaging/deploy-cert.ps1));
+only a paid EV certificate clears that everywhere automatically. For a
+public, open-source tool, "just run from source" is the honest
+zero-friction path.
+
+## Docker
+
+[packaging/Dockerfile](packaging/Dockerfile) builds a CLI-only image — no
+GUI, no PySide6/Qt — for running ConfigGen as a local service or in CI:
+
+```bash
+docker build -t configgen:latest -f packaging/Dockerfile .
+docker run --rm -v ./my-configs:/app/resources configgen:latest list
+docker run --rm -v ./my-configs:/app/resources configgen:latest \
+  generate widget --values values.json --api-key <key>
+```
+
+Mount your own project directory over `/app/resources` — the image ships
+no schemas of its own, and `pip install .` (not `.[gui]`) is used at build
+time so PySide6/Qt is never pulled in, keeping the image small. Config
+packs, `users.db`, and generated output all live under that same mounted
+directory, so state persists across container runs as long as you reuse
+the same host path.
 
 ## Adding a config (the four-line pitch)
 
