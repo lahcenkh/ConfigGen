@@ -154,10 +154,6 @@ ruff check .
 black --check .
 ```
 
-Screenshots above are real renders, not mockups — regenerate them after a
-UI change with `python tools/screenshot.py` (uses Qt's offscreen platform,
-no display needed).
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
