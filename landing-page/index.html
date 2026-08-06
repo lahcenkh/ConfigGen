@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ConfigGen — a form for every config you used to hand-edit</title>
+<meta name="description" content="ConfigGen turns a schema and a Jinja2 template into a guided form and a validated, rendered config — desktop GUI and full CLI, no core code changes to add a new one." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 88 88'%3E%3Crect width='88' height='88' rx='20' fill='%23152420'/%3E%3Cpath d='M31 24c-7 0-9 3-9 9v6c0 4-2 5-5 5 3 0 5 1 5 5v6c0 6 2 9 9 9' stroke='%235fd6a4' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M57 24c7 0 9 3 9 9v6c0 4 2 5 5 5-3 0-5 1-5 5v6c0 6-2 9-9 9' stroke='%235fd6a4' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M52 37a10 10 0 1 0 0 14h-6' stroke='%23e6ebe8' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+
+  /* ---------------------------------------------------------------------
+     Tokens — lifted directly from the app's own theme.py (Palette.DARK /
+     Palette.LIGHT), not invented for this page. Dark is the default root
+     theme because the app itself defaults to dark on first launch; a
+     light override applies both by OS preference and by the manual
+     toggle in the nav.
+  --------------------------------------------------------------------- */
+  :root {
+    --bg: #0a0c0b;
+    --surface: #0d100f;
+    --surface-2: #101413;
+    --surface-3: #121716;
+    --surface-4: #171d1b;
+    --text: #e6ebe8;
+    --text-muted: #8b968f;
+    --text-faint: #6f7a75;
+    --border: #1c2320;
+    --border-soft: #171d1b;
+    --accent: #5fd6a4;
+    --accent-hover: #7ce0b5;
+    --accent-ink: #06120d;
+    --accent-tint: #152420;
+    --accent-tint-border: #1f3630;
+    --danger: #ffb4ab;
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+
+    --radius-sm: 5px;
+    --radius-md: 7px;
+    --radius-lg: 9px;
+
+    --font-sans: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+    --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+
+    color-scheme: dark;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #e6eae8;
+      --surface: #ffffff;
+      --surface-2: #ffffff;
+      --surface-3: #eef1ef;
+      --surface-4: #dfe4e1;
+      --text: #121512;
+      --text-muted: #5b6560;
+      --text-faint: #798079;
+      --border: #d3d9d6;
+      --border-soft: #dfe4e1;
+      --accent: #1f8f5f;
+      --accent-hover: #177349;
+      --accent-ink: #ffffff;
+      --accent-tint: #dbf0e6;
+      --accent-tint-border: #a6ddc0;
+      --danger: #dc2626;
+      --shadow: 0 1px 0 rgba(18, 21, 18, 0.06);
+      color-scheme: light;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0a0c0b; --surface: #0d100f; --surface-2: #101413; --surface-3: #121716; --surface-4: #171d1b;
+    --text: #e6ebe8; --text-muted: #8b968f; --text-faint: #6f7a75;
+    --border: #1c2320; --border-soft: #171d1b;
+    --accent: #5fd6a4; --accent-hover: #7ce0b5; --accent-ink: #06120d;
+    --accent-tint: #152420; --accent-tint-border: #1f3630;
+    --danger: #ffb4ab; --shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+
+  :root[data-theme="light"] {
+    --bg: #e6eae8; --surface: #ffffff; --surface-2: #ffffff; --surface-3: #eef1ef; --surface-4: #dfe4e1;
+    --text: #121512; --text-muted: #5b6560; --text-faint: #798079;
+    --border: #d3d9d6; --border-soft: #dfe4e1;
+    --accent: #1f8f5f; --accent-hover: #177349; --accent-ink: #ffffff;
+    --accent-tint: #dbf0e6; --accent-tint-border: #a6ddc0;
+    --danger: #dc2626; --shadow: 0 1px 0 rgba(18, 21, 18, 0.06);
+    color-scheme: light;
+  }
+
+  /* ------------------------------------------------------------------ */
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  img, svg { display: block; max-width: 100%; }
+
+  a { color: inherit; }
+
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  h1, h2, h3, h4 { margin: 0; text-wrap: balance; font-weight: 600; letter-spacing: -0.01em; }
+
+  p { margin: 0; }
+
+  .wrap {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  code, .mono { font-family: var(--font-mono); }
+
+  /* buttons ------------------------------------------------------------ */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 11px 18px;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease, color 0.15s ease;
+    white-space: nowrap;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-fill { background: var(--accent); color: var(--accent-ink); }
+  .btn-fill:hover { background: var(--accent-hover); }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sm { padding: 7px 12px; font-size: 13px; }
+
+  /* nav ------------------------------------------------------------------ */
+
+  header.nav {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .nav-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    gap: 24px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .brand-mark { width: 30px; height: 30px; flex: none; }
+  .brand-word { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+  .brand-word b { color: var(--accent); font-weight: 700; }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  .nav-links a { text-decoration: none; transition: color 0.15s ease; }
+  .nav-links a:hover { color: var(--text); }
+  .nav-actions { display: flex; align-items: center; gap: 10px; }
+
+  .theme-toggle {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .theme-toggle:hover { color: var(--accent); border-color: var(--accent-tint-border); }
+  .theme-toggle svg { width: 16px; height: 16px; }
+  .theme-toggle .icon-sun { display: none; }
+  :root[data-theme="light"] .theme-toggle .icon-moon { display: none; }
+  :root[data-theme="light"] .theme-toggle .icon-sun { display: block; }
+
+  @media (max-width: 760px) {
+    .nav-links { display: none; }
+  }
+
+  /* hero ------------------------------------------------------------------ */
+
+  .hero {
+    padding: 96px 0 88px;
+    border-bottom: 1px solid var(--border-soft);
+    position: relative;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 56px;
+    align-items: center;
+  }
+  @media (min-width: 980px) {
+    .hero-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  .hero-eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+
+  h1.hero-title {
+    font-size: clamp(34px, 4.4vw, 52px);
+    line-height: 1.08;
+    margin-bottom: 20px;
+  }
+  h1.hero-title .hl { color: var(--accent); }
+
+  .hero-sub {
+    font-size: 17px;
+    color: var(--text-muted);
+    max-width: 54ch;
+    margin-bottom: 32px;
+  }
+
+  .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
+
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-faint);
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 7px; }
+  .hero-meta svg { width: 13px; height: 13px; color: var(--text-faint); }
+
+  /* pipeline mock ------------------------------------------------------- */
+
+  .pipeline {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.6);
+  }
+  .pipeline-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 14px;
+    background: var(--surface-3);
+    border-bottom: 1px solid var(--border);
+  }
+  .pipeline-bar .dots { display: flex; gap: 6px; }
+  .pipeline-bar .dots span { width: 9px; height: 9px; border-radius: 50%; background: var(--surface-4); }
+  .pipeline-bar .path {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-left: 4px;
+  }
+  .pipeline-body {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 620px) and (max-width: 979px), (min-width: 1180px) {
+    .pipeline-body { grid-template-columns: 1fr auto 1fr; }
+  }
+  .pipeline-pane { padding: 18px 20px; min-width: 0; }
+  .pipeline-pane + .pipeline-pane { border-top: 1px solid var(--border); }
+  @media (min-width: 620px) and (max-width: 979px), (min-width: 1180px) {
+    .pipeline-pane + .pipeline-pane { border-top: none; border-left: 1px solid var(--border); }
+  }
+  .pipeline-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+  .pipeline-code {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .pipeline-arrow {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    color: var(--accent);
+  }
+  @media (min-width: 620px) and (max-width: 979px), (min-width: 1180px) {
+    .pipeline-arrow { display: flex; }
+  }
+  .pipeline-arrow svg { width: 18px; height: 18px; }
+
+  .tok-key { color: var(--text-faint); }
+  .tok-str { color: var(--text); }
+  .tok-const { color: var(--accent); }
+  .tok-cmt { color: var(--text-faint); font-style: italic; }
+  .tok-cmd { color: var(--accent); }
+
+  .reveal-line {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(6px);
+    animation: revealLine 0.5s ease forwards;
+  }
+  @keyframes revealLine { to { opacity: 1; transform: translateY(0); } }
+
+  .cursor {
+    display: inline-block;
+    width: 7px; height: 14px;
+    background: var(--accent);
+    vertical-align: -2px;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* section shell -------------------------------------------------------- */
+
+  section { padding: 84px 0; border-bottom: 1px solid var(--border-soft); }
+  section:last-of-type { border-bottom: none; }
+
+  .section-head { max-width: 640px; margin-bottom: 44px; }
+  .section-head h2 { font-size: clamp(24px, 3vw, 32px); margin: 10px 0 12px; }
+  .section-head p { color: var(--text-muted); font-size: 15.5px; }
+
+  /* three files ------------------------------------------------------- */
+
+  .files-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  @media (min-width: 760px) { .files-row { grid-template-columns: repeat(3, 1fr); } }
+
+  .file-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+  }
+  .file-card .tag {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 14px;
+  }
+  .tag-req { background: var(--accent-tint); color: var(--accent); border: 1px solid var(--accent-tint-border); }
+  .tag-opt { background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border); }
+  .file-card .path { font-family: var(--font-mono); font-size: 14.5px; margin-bottom: 8px; word-break: break-word; }
+  .file-card .desc { color: var(--text-muted); font-size: 13.5px; line-height: 1.5; }
+
+  .check-strip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+  .check-strip .cmd { color: var(--text); }
+  .check-strip .cmd::before { content: "$ "; color: var(--accent); }
+
+  /* feature grid ----------------------------------------------------------- */
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1px;
+    background: var(--border-soft);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  @media (min-width: 700px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1020px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+
+  .card {
+    background: var(--surface-2);
+    padding: 26px 24px;
+    transition: background-color 0.18s ease;
+  }
+  .card:hover { background: var(--surface-3); }
+  .card .kicker {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+  }
+  .card h3 { font-size: 16.5px; margin-bottom: 8px; }
+  .card p { color: var(--text-muted); font-size: 13.75px; line-height: 1.55; }
+
+  /* runners: gui / cli ------------------------------------------------------ */
+
+  .runners {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  @media (min-width: 820px) { .runners { grid-template-columns: 1fr 1fr; } }
+
+  .runner {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-2);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .runner-head { padding: 20px 22px 0; }
+  .runner-head .kicker { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  .runner-head h3 { font-size: 19px; margin-bottom: 8px; }
+  .runner-head p { color: var(--text-muted); font-size: 13.75px; margin-bottom: 18px; }
+
+  .runner-term {
+    margin: 0 20px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.85;
+    color: var(--text-muted);
+    overflow-x: auto;
+  }
+  .runner-term .cmd { color: var(--text); }
+  .runner-term .cmd::before { content: "› "; color: var(--accent); }
+  .runner-term .out { color: var(--text-faint); }
+
+  /* docs strip ----------------------------------------------------------- */
+
+  .doclist { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface-2); }
+  .doc-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 16px 20px;
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 0.15s ease;
+  }
+  .doc-row + .doc-row { border-top: 1px solid var(--border); }
+  .doc-row:hover { background: var(--surface-3); }
+  .doc-row .name { font-family: var(--font-mono); font-size: 13.5px; color: var(--accent); white-space: nowrap; }
+  .doc-row .desc { font-size: 13.5px; color: var(--text-muted); text-align: right; }
+  @media (max-width: 640px) { .doc-row { flex-direction: column; gap: 4px; } .doc-row .desc { text-align: left; } }
+
+  /* install ----------------------------------------------------------- */
+
+  .install-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 780px) { .install-grid { grid-template-columns: repeat(3, 1fr); } }
+
+  .install-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-2);
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .install-card h4 { font-size: 14.5px; }
+  .install-card .desc { color: var(--text-muted); font-size: 13px; }
+  .install-code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    color: var(--text);
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.7;
+  }
+  .install-code .c { color: var(--text-faint); }
+
+  /* cta band --------------------------------------------------------------- */
+
+  .cta-band {
+    text-align: center;
+    padding: 88px 0;
+  }
+  .cta-band h2 { font-size: clamp(26px, 3.6vw, 38px); margin-bottom: 14px; }
+  .cta-band p { color: var(--text-muted); margin: 0 auto 30px; max-width: 46ch; }
+  .cta-band .hero-ctas { justify-content: center; }
+
+  /* footer ----------------------------------------------------------------- */
+
+  footer { padding: 40px 0; }
+  .foot-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+  }
+  .foot-brand { display: flex; align-items: center; gap: 10px; }
+  .foot-brand .brand-mark { width: 22px; height: 22px; }
+  .foot-brand .meta { font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+  .foot-links { display: flex; gap: 22px; font-size: 13.5px; color: var(--text-muted); flex-wrap: wrap; }
+  .foot-links a { text-decoration: none; }
+  .foot-links a:hover { color: var(--accent); }
+
+  /* scroll reveal ----------------------------------------------------------- */
+  .fade-up { opacity: 0; transform: translateY(14px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .fade-up.in { opacity: 1; transform: translateY(0); }
+
+</style>
+</head>
+<body>
+
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="brand" href="#top">
+        <svg class="brand-mark" viewBox="0 0 88 88" fill="none" aria-hidden="true">
+          <rect x="1" y="1" width="86" height="86" rx="20" fill="var(--accent-tint)" stroke="var(--accent-tint-border)" stroke-width="2"/>
+          <path d="M31 24c-7 0-9 3-9 9v6c0 4-2 5-5 5 3 0 5 1 5 5v6c0 6 2 9 9 9" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M57 24c7 0 9 3 9 9v6c0 4 2 5 5 5-3 0-5 1-5 5v6c0 6-2 9-9 9" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M52 37a10 10 0 1 0 0 14h-6" stroke="var(--text)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand-word">Config<b>Gen</b></span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#adding-a-config">How it works</a>
+        <a href="#docs">Docs</a>
+        <a href="#install">Install</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle color theme">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+        <a class="btn btn-ghost btn-sm" href="https://github.com/lahcenkh/ConfigGen" target="_blank" rel="noopener">GitHub</a>
+        <a class="btn btn-fill btn-sm" href="#install">Get ConfigGen</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <section class="hero" style="border-top:none; padding-top: 76px;">
+      <div class="wrap hero-grid">
+        <div>
+          <div class="hero-eyebrow"><span class="dot"></span><span class="eyebrow">Schema → Template → Config</span></div>
+          <h1 class="hero-title">A generic, plug‑and‑play tool for generating <span class="hl">text configs</span> — from a form, not a text editor.</h1>
+          <p class="hero-sub">Config Engineers fill in a guided form and get a validated, rendered config in one click. Template Engineers write the schema and Jinja2 template that <em>define</em> that form. Add a new config type by dropping in a file — no core code changes, no restart.</p>
+          <div class="hero-ctas">
+            <a class="btn btn-fill" href="#install">Get ConfigGen</a>
+            <a class="btn btn-ghost" href="https://github.com/lahcenkh/ConfigGen" target="_blank" rel="noopener">View on GitHub</a>
+          </div>
+          <div class="hero-meta">
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/></svg>Desktop GUI + full CLI</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>Windows exe, source, or Docker</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>MIT licensed</span>
+          </div>
+        </div>
+
+        <div class="pipeline" aria-label="Example: a router schema rendering into a real device config">
+          <div class="pipeline-bar">
+            <div class="dots"><span></span><span></span><span></span></div>
+            <span class="path">router_base_config</span>
+          </div>
+          <div class="pipeline-body">
+            <div class="pipeline-pane">
+              <div class="pipeline-label">schemas/router_base_config.yaml</div>
+<pre class="pipeline-code"><span class="reveal-line" style="animation-delay:.05s"><span class="tok-key">id:</span> router_base_config</span>
+<span class="reveal-line" style="animation-delay:.12s"><span class="tok-key">template:</span> router_base_config.j2</span>
+<span class="reveal-line" style="animation-delay:.19s"><span class="tok-key">fields:</span></span>
+<span class="reveal-line" style="animation-delay:.26s">  - <span class="tok-key">key:</span> hostname
+    <span class="tok-key">pattern:</span> <span class="tok-str">'^[a-z0-9-]+$'</span></span>
+<span class="reveal-line" style="animation-delay:.33s">  - <span class="tok-key">key:</span> mgmt_ip
+    <span class="tok-key">type:</span> <span class="tok-const">ip_cidr</span></span>
+<span class="reveal-line" style="animation-delay:.40s">  - <span class="tok-key">key:</span> enable_ospf
+    <span class="tok-key">type:</span> <span class="tok-const">bool</span></span></pre>
+            </div>
+            <div class="pipeline-arrow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </div>
+            <div class="pipeline-pane">
+              <div class="pipeline-label">rendered output</div>
+<pre class="pipeline-code"><span class="reveal-line" style="animation-delay:.55s"><span class="tok-cmt">! Generated by ConfigGen | 2026-08-06</span></span>
+<span class="reveal-line" style="animation-delay:.62s">hostname rtr-core-01</span>
+<span class="reveal-line" style="animation-delay:.69s">interface GigabitEthernet0/0
+ ip address 10.10.10.1 255.255.255.0</span>
+<span class="reveal-line" style="animation-delay:.76s">router ospf 1
+ network 10.10.10.0 0.0.0.255 area 0</span>
+<span class="reveal-line" style="animation-delay:.83s">ntp server 192.0.2.123
+snmp-server community public-ro RO<span class="cursor"></span></span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="adding-a-config">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Adding a config</span>
+          <h2>Three files, at most.</h2>
+          <p>Nothing else changes. No core code, no registration step, no restart — the CLI and the GUI dashboard both re-scan <code class="mono">schemas/</code> every time.</p>
+        </div>
+        <div class="files-row">
+          <div class="file-card fade-up">
+            <span class="tag tag-req">Required</span>
+            <div class="path">schemas/&lt;id&gt;.yaml</div>
+            <div class="desc">The form itself: field types, validation, and which template renders it.</div>
+          </div>
+          <div class="file-card fade-up">
+            <span class="tag tag-req">Required</span>
+            <div class="path">templates/&lt;id&gt;.j2</div>
+            <div class="desc">Plain Jinja2, referencing the schema's field keys — the actual output shape.</div>
+          </div>
+          <div class="file-card fade-up">
+            <span class="tag tag-opt">Optional</span>
+            <div class="path">hooks/&lt;id&gt;.py</div>
+            <div class="desc">A <code class="mono">build()</code> function for values a form field can't hold — database lookups, derived addresses.</div>
+          </div>
+        </div>
+        <div class="check-strip fade-up">
+          <span class="cmd">configgen check schemas/my_thing.yaml</span>
+          <span>— validates + warns on template/field mismatches, before you ever hit Generate.</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Under the hood</span>
+          <h2>Everything a config-generation tool needs, and nothing it doesn't.</h2>
+          <p>It grew out of network configs — router and switch examples run through the docs — but there's nothing network-specific in the engine itself.</p>
+        </div>
+        <div class="grid">
+
+          <div class="card"><div class="kicker">Engine</div><h3>Two-tier generation</h3><p>Tier 1 validates a schema's fields straight into the template. Tier 2 adds an optional hook — plain Python, with <code class="mono">services.db</code> and <code class="mono">services.net</code> — for values a form field alone can't express.</p></div>
+
+          <div class="card"><div class="kicker">Desktop</div><h3>Full GUI</h3><p>Dashboard of template tiles, a guided form with live preview and diff-against-last, a Template Editor with Check / Test Render / version history, Bulk Generate, User Admin, and an in-app Help browser.</p></div>
+
+          <div class="card"><div class="kicker">Headless</div><h3>Every action, scriptable</h3><p>Everything the GUI does has a CLI equivalent — <code class="mono">check</code>, <code class="mono">generate</code>, <code class="mono">bulk</code>, <code class="mono">diff</code>, <code class="mono">history</code>, <code class="mono">export</code>/<code class="mono">import</code>, and full user/group/API-key management.</p></div>
+
+          <div class="card"><div class="kicker">Batch</div><h3>Bulk generation</h3><p>Generate many configs from one CSV/XLSX file, or a database query — every row validated independently, one bad row never blocks the rest.</p></div>
+
+          <div class="card"><div class="kicker">Data</div><h3>Multi-database service</h3><p>A generic, read-only SQL layer backed by <code class="mono">queries.yaml</code> — one SQLite file or several, named and addressed per query.</p></div>
+
+          <div class="card"><div class="kicker">Teams</div><h3>Roles &amp; groups</h3><p>Admin, Template Engineer, and Config Engineer, with group-scoped template visibility — or skip it entirely and run solo, where none of it ever comes up.</p></div>
+
+          <div class="card"><div class="kicker">Sharing</div><h3>Config packs</h3><p>Export a schema + template + hook + preflight check as one <code class="mono">.zip</code>; import it elsewhere with explicit overwrite/rename conflict handling.</p></div>
+
+          <div class="card"><div class="kicker">Safety net</div><h3>Preflight checks</h3><p>Advisory syntax sanity checks after rendering — unclosed interface blocks, bad VLAN ranges, unbalanced braces — for IOS, JunOS, SR OS, VRP8, or your own.</p></div>
+
+          <div class="card"><div class="kicker">Ship it</div><h3>GUI exe, CLI exe, or Docker</h3><p>One build produces a windowed <code class="mono">ConfigGen.exe</code> and a standalone console <code class="mono">ConfigGen-CLI.exe</code> — or run the CLI-only Docker image in CI, no Qt required either way.</p></div>
+
+        </div>
+      </div>
+    </section>
+
+    <section id="run-it">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Two ways to run it</span>
+          <h2>Click through it, or script around it.</h2>
+          <p>The GUI and the CLI call the exact same core — nothing the form does is unavailable to a script, and nothing the CLI does needs a window open.</p>
+        </div>
+        <div class="runners">
+          <div class="runner fade-up">
+            <div class="runner-head">
+              <div class="kicker">GUI</div>
+              <h3>Fill in a form, get a config</h3>
+              <p>Pick a template from the dashboard, fill in the guided form, preview the rendered output, and save — with diff-against-last and a full generation log along the way.</p>
+            </div>
+            <div class="runner-term">
+<span class="out"># first run bootstraps admin/admin</span>
+<span class="cmd">configgen-gui</span>
+            </div>
+          </div>
+          <div class="runner fade-up">
+            <div class="runner-head">
+              <div class="kicker">CLI</div>
+              <h3>Same pipeline, zero clicks</h3>
+              <p>Validate, generate, and batch-process from a terminal or a CI job — every command returns exit code 0 or 1, scriptable without parsing output.</p>
+            </div>
+            <div class="runner-term">
+<span class="cmd">configgen check schemas/router_base_config.yaml</span>
+<span class="out">OK: Generic Router Base Config (router_base_config) v1</span>
+<span class="cmd">configgen generate router_base_config --values values.json</span>
+<span class="out">primary: out/tester/ungrouped/..._primary_....txt</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="docs">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Documentation</span>
+          <h2>Seven docs. No wiki spelunking.</h2>
+          <p>The same set is one click away inside the app too — the sidebar's Help button opens an in-app browser for all of it.</p>
+        </div>
+        <div class="doclist">
+          <a class="doc-row" href="https://github.com/lahcenkh/ConfigGen/blob/main/docs/adding-a-config.md" target="_blank" rel="noopener"><span class="name">adding-a-config.md</span><span class="desc">Worked examples: form-only, multi-document, DB-backed</span></a>
+          <a class="doc-row" href="https://github.com/lahcenkh/ConfigGen/blob/main/docs/schema-reference.md" target="_blank" rel="noopener"><span class="name">schema-reference.md</span><span class="desc">Every field type, every schema option</span></a>
+          <a class="doc-row" href="https://github.com/lahcenkh/ConfigGen/blob/main/docs/hooks.md" target="_blank" rel="noopener"><span class="name">hooks.md</span><span class="desc">The build() hook contract, services.db/services.net, custom filters</span></a>
+          <a class="doc-row" href="https://github.com/lahcenkh/ConfigGen/blob/main/docs/bulk-generation.md" target="_blank" rel="noopener"><span class="name">bulk-generation.md</span><span class="desc">CSV/database-driven batch generation</span></a>
+          <a class="doc-row" href="https://github.com/lahcenkh/ConfigGen/blob/main/docs/cli-reference.md" target="_blank" rel="noopener"><span class="name">cli-reference.md</span><span class="desc">Every CLI subcommand, with real examples</span></a>
+          <a class="doc-row" href="https://github.com/lahcenkh/ConfigGen/blob/main/docs/roles-and-groups.md" target="_blank" rel="noopener"><span class="name">roles-and-groups.md</span><span class="desc">The three-role model, group scoping, template lifecycle</span></a>
+          <a class="doc-row" href="https://github.com/lahcenkh/ConfigGen/blob/main/docs/troubleshooting.md" target="_blank" rel="noopener"><span class="name">troubleshooting.md</span><span class="desc">The errors you'll actually hit, logs/app.log, and what they mean</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Install</span>
+          <h2>Python 3.10+, a Windows exe, or Docker.</h2>
+          <p>Pick whichever matches how you'll actually run it.</p>
+        </div>
+        <div class="install-grid">
+          <div class="install-card fade-up">
+            <h4>From source</h4>
+            <p class="desc">The desktop GUI, from a clone.</p>
+            <div class="install-code"><span class="c">$</span> pip install -e ".[gui]"
+<span class="c">$</span> configgen-gui</div>
+          </div>
+          <div class="install-card fade-up">
+            <h4>CLI only</h4>
+            <p class="desc">No PySide6/Qt pulled in at all.</p>
+            <div class="install-code"><span class="c">$</span> pip install -e .
+<span class="c">$</span> configgen list --dir examples/schemas</div>
+          </div>
+          <div class="install-card fade-up">
+            <h4>Docker</h4>
+            <p class="desc">CLI-only image, for CI or a server.</p>
+            <div class="install-code"><span class="c">$</span> docker build -t configgen -f packaging/Dockerfile .
+<span class="c">$</span> docker run --rm configgen list</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-band" style="border-bottom:none;">
+      <div class="wrap">
+        <span class="eyebrow">Get started</span>
+        <h2 style="margin-top:10px;">Your next config doesn't need a text editor.</h2>
+        <p>Clone it, run it, and drop in your first schema — the example configs under <code class="mono">examples/</code> are self-contained, try one immediately.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-fill" href="https://github.com/lahcenkh/ConfigGen" target="_blank" rel="noopener">View on GitHub</a>
+          <a class="btn btn-ghost" href="https://github.com/lahcenkh/ConfigGen/blob/main/docs/adding-a-config.md" target="_blank" rel="noopener">Read the walkthrough</a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="wrap foot-row">
+      <div class="foot-brand">
+        <svg class="brand-mark" viewBox="0 0 88 88" fill="none" aria-hidden="true">
+          <rect x="1" y="1" width="86" height="86" rx="20" fill="var(--accent-tint)" stroke="var(--accent-tint-border)" stroke-width="2"/>
+          <path d="M31 24c-7 0-9 3-9 9v6c0 4-2 5-5 5 3 0 5 1 5 5v6c0 6 2 9 9 9" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M57 24c7 0 9 3 9 9v6c0 4 2 5 5 5-3 0-5 1-5 5v6c0 6-2 9-9 9" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M52 37a10 10 0 1 0 0 14h-6" stroke="var(--text)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="meta">ConfigGen v0.1.0 · MIT License · Lahcen Khouchane</span>
+      </div>
+      <div class="foot-links">
+        <a href="#features">Features</a>
+        <a href="#docs">Docs</a>
+        <a href="https://github.com/lahcenkh/ConfigGen" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/lahcenkh/ConfigGen/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+      </div>
+    </div>
+  </footer>
+
+<script>
+  (function () {
+    "use strict";
+
+    // Theme toggle — persists across visits, overrides prefers-color-scheme
+    // in both directions per the data-theme rules above.
+    var root = document.documentElement;
+    var toggle = document.getElementById("themeToggle");
+    var stored = null;
+    try { stored = localStorage.getItem("configgen-theme"); } catch (e) {}
+    if (stored === "light" || stored === "dark") root.setAttribute("data-theme", stored);
+
+    toggle.addEventListener("click", function () {
+      var current = root.getAttribute("data-theme");
+      var isLight = current
+        ? current === "light"
+        : window.matchMedia("(prefers-color-scheme: light)").matches;
+      var next = isLight ? "dark" : "light";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("configgen-theme", next); } catch (e) {}
+    });
+
+    // Scroll-reveal for cards/blocks — a light touch, skipped entirely for
+    // reduced-motion users (elements are visible by default; JS only adds
+    // the initial hidden state once it confirms it'll animate them back in).
+    var prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var targets = document.querySelectorAll(".fade-up");
+    if (!prefersReduced && "IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in");
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.15, rootMargin: "0px 0px -40px 0px" });
+      targets.forEach(function (t) { io.observe(t); });
+    } else {
+      targets.forEach(function (t) { t.classList.add("in"); });
+    }
+  })();
+</script>
+
+</body>
+</html>
