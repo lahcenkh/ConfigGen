@@ -15,7 +15,7 @@ import urllib.request
 
 from configgen.appinfo import __version__
 
-DEFAULT_REPO = "ConfigGen/ConfigGen"
+DEFAULT_REPO = "lahcenkh/ConfigGen"
 _API_URL = "https://api.github.com/repos/{repo}/releases/latest"
 
 

@@ -57,6 +57,8 @@ class UpdateBanner(QWidget):
     def show_update(self, latest_tag: str) -> None:
         self.label.setText(
             f"ConfigGen {latest_tag} is available (you're on {__version__}). "
-            f"Visit {DEFAULT_REPO}'s releases page to update."
+            f'Visit <a href="https://github.com/{DEFAULT_REPO}/releases">'
+            f"{DEFAULT_REPO}'s releases page</a> to update."
         )
+        self.label.setOpenExternalLinks(True)
         self.setVisible(True)

@@ -3,6 +3,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 
+![Logo](resources/branding/logo.svg)
+
 A generic, plug-and-play desktop tool (GUI + CLI) for generating text
 configurations from a guided form and Jinja2 templates. It grew out of
 network configs (router/switch configs are the running example throughout
