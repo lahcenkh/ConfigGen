@@ -30,7 +30,7 @@ think about.
 ## Quick start (from source)
 
 ```bash
-git clone https://github.com/ConfigGen/ConfigGen.git
+git clone https://github.com/lahcenkh/ConfigGen.git
 cd ConfigGen
 pip install -e ".[gui]"   # add the desktop GUI (PySide6/Qt)
 configgen-gui              # first run bootstraps admin/admin - change it
@@ -64,7 +64,7 @@ configgen generate examples/schemas/router_base_config.yaml \
 ## Building the Windows exe
 
 ```powershell
-git clone https://github.com/ConfigGen/ConfigGen.git
+git clone https://github.com/lahcenkh/ConfigGen.git
 cd ConfigGen
 python -m venv .venv
 .venv\Scripts\pip install -e ".[dev]"

@@ -122,6 +122,54 @@ def test_copy_configs_without_a_run_does_nothing(qtbot, tmp_path: Path, monkeypa
     assert not calls
 
 
+def test_bulk_run_with_a_buggy_hook_is_caught_logged_and_shown(
+    qtbot, tmp_path: Path, monkeypatch, caplog
+):
+    # A hook bug (not a clean HookError) used to propagate straight out of
+    # run_bulk and out of _run() uncaught — silent in a --windowed build.
+    # Must now be caught, logged with its traceback, and shown to the user.
+    monkeypatch.setattr("configgen.paths.app_root", lambda: tmp_path)
+    root = tmp_path / "project"
+    (root / "schemas").mkdir(parents=True)
+    (root / "templates").mkdir()
+    (root / "hooks").mkdir()
+    schema_path = root / "schemas" / "widget.yaml"
+    schema_path.write_text("placeholder", encoding="utf-8")
+    (root / "templates" / "widget.j2").write_text("hello {{ name }}", encoding="utf-8")
+    (root / "hooks" / "buggy.py").write_text(
+        "def build(values, context, services):\n    return values['does_not_exist']\n",
+        encoding="utf-8",
+    )
+    schema = Schema(
+        name="Widget",
+        id="widget",
+        template="widget.j2",
+        identity_field="name",
+        hook="buggy",
+        fields=[Field(key="name", label="Name", type="string", required=True)],
+    )
+    store = AuthStore(tmp_path / "users.db")
+    user = store.get_user("admin")
+    dialog = BulkDialog(user, store, [schema], {schema.id: schema_path}, set())
+    qtbot.addWidget(dialog)
+
+    rows_path = tmp_path / "rows.csv"
+    rows_path.write_text("name\nweb01\n", encoding="utf-8")
+    dialog.input_path = rows_path
+
+    calls = []
+    monkeypatch.setattr(
+        "configgen.ui.bulk_dialog.QMessageBox.critical",
+        staticmethod(lambda *a, **k: calls.append(a)),
+    )
+    with caplog.at_level("ERROR", logger="configgen.hooks"):
+        dialog._run()
+
+    assert calls  # the user was shown something, not left staring at nothing
+    assert dialog.result is None
+    assert any("raised an unhandled exception" in r.message for r in caplog.records)
+
+
 def test_run_without_schema_or_file_shows_warning_and_does_nothing(
     qtbot, tmp_path: Path, monkeypatch
 ):

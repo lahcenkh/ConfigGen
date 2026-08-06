@@ -316,3 +316,27 @@ def test_run_bulk_render_error_becomes_row_error(tmp_path: Path):
     assert result.valid_count == 0
     assert result.error_count == 1
     assert "_render" in result.row_errors[0].errors
+
+
+# -- run_bulk: logging ---------------------------------------------------------
+
+
+def test_run_bulk_logs_batch_start_and_summary(tmp_path: Path, caplog):
+    _write_template(tmp_path)
+    schema = _schema()
+
+    with caplog.at_level("INFO", logger="configgen.core.bulk"):
+        result = run_bulk(
+            schema,
+            [{"name": "web01"}, {"name": ""}],
+            templates_dir=tmp_path,
+            hooks_dir=None,
+            output_root=tmp_path / "out",
+            source="rows.csv",
+            timestamp=TS,
+        )
+
+    messages = "\n".join(caplog.messages)
+    assert f"bulk {result.batch_id}: schema=widget rows=2 source=rows.csv" in messages
+    assert f"bulk {result.batch_id}: row 3 failed validation" in messages
+    assert f"bulk {result.batch_id}: finished — 1 valid, 1 errors" in messages

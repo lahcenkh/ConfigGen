@@ -13,12 +13,15 @@ baked into the core.
 from __future__ import annotations
 
 import importlib.util
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
 from configgen.core.db import Database, NoDatabase
 from configgen.core.schema import project_data_dir_for
 from configgen.core.values import NetworkValue
+
+logger = logging.getLogger(__name__)
 
 
 class HookError(Exception):
@@ -89,14 +92,25 @@ def load_hook(hooks_dir: str | Path, name: str) -> Callable[[dict, dict, Service
     catches this before it ever gets here."""
     module_path = Path(hooks_dir) / f"{name}.py"
     if not module_path.is_file():
+        logger.error("hook '%s': not found at %s", name, module_path)
         raise HookError({"hook": f"hook not found: {module_path}"})
 
     spec = importlib.util.spec_from_file_location(f"configgen_hook_{name}", module_path)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        # A bad top-level import/syntax error in the hook file itself
+        # (e.g. `from configgen.prepare import ...` after a rename that
+        # dropped that module) raises here, before build() is even found —
+        # logged with its real traceback so it doesn't just read as
+        # "nothing happened".
+        logger.exception("hook '%s': failed to load %s", name, module_path)
+        raise
 
     build_fn = getattr(module, "build", None)
     if build_fn is None:
+        logger.error("hook '%s': %s has no build() function", name, module_path)
         raise HookError({"hook": f"hook '{name}' has no build() function"})
     return build_fn
 
@@ -112,6 +126,22 @@ def run_hook(
     A hook's own HookError propagates as-is; so does any other exception
     a buggy hook raises — hooks are plain Python, not sandboxed, and their
     author sees their own tracebacks unobscured (§6: "pure Python and
-    unit-testable in isolation")."""
+    unit-testable in isolation"). Every run — inputs, outcome, and (on
+    failure) the full traceback — is logged, since that's the only trail
+    left once a --windowed build has swallowed the exception itself."""
+    logger.info("hook '%s': starting (input keys=%s)", name, sorted(values))
     build_fn = load_hook(hooks_dir, name)
-    return build_fn(values, context, services)
+    try:
+        result = build_fn(values, context, services)
+    except HookError as exc:
+        logger.warning("hook '%s': rejected input: %s", name, exc.errors)
+        raise
+    except Exception:
+        logger.exception("hook '%s': raised an unhandled exception", name)
+        raise
+    logger.info(
+        "hook '%s': succeeded (returned keys=%s)",
+        name,
+        sorted(result) if isinstance(result, dict) else type(result).__name__,
+    )
+    return result

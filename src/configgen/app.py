@@ -2,20 +2,27 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QDialog
 
-from configgen.appinfo import APP_NAME
+from configgen.appinfo import APP_NAME, __version__
 from configgen.core.auth import AuthStore
+from configgen.logging_setup import configure_logging
 from configgen.paths import icon_path, schemas_dir, users_db_path
 from configgen.ui import theme
 from configgen.ui.login_window import LoginWindow
 from configgen.ui.main_window import MainWindow
 
+logger = logging.getLogger(__name__)
+
 
 def main(argv: list[str] | None = None) -> int:
+    log_file = configure_logging()
+    logger.info("%s v%s starting (log file: %s)", APP_NAME, __version__, log_file)
+
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName(APP_NAME)
     # Dark by default: there's no logged-in user yet to read a per-user
@@ -42,13 +49,17 @@ def main(argv: list[str] | None = None) -> int:
     while True:
         login = LoginWindow(store)
         if login.exec() != QDialog.DialogCode.Accepted:
+            logger.info("login dialog closed without signing in; exiting")
             return 0
 
+        logger.info("user '%s' signed in", login.authenticated_user.username)
         window = MainWindow(login.authenticated_user, store, schemas_path)
         window.show()
         app.exec()
         if not window.logout_requested:
+            logger.info("main window closed; exiting")
             return 0
+        logger.info("user '%s' logged out; returning to login", login.authenticated_user.username)
 
 
 if __name__ == "__main__":

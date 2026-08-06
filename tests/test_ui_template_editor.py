@@ -4,9 +4,9 @@ from pathlib import Path
 from PySide6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
 
 from configgen.core.auth import AuthStore
-from configgen.core.schema import project_history_dir_for
+from configgen.core.schema import load_schema, project_history_dir_for
 from configgen.ui import theme
-from configgen.ui.template_editor import HistoryDialog, TemplateEditorWindow
+from configgen.ui.template_editor import HistoryDialog, TemplateEditorWindow, TestRenderDialog
 
 WIDGET_SCHEMA = """\
 name: Widget
@@ -207,6 +207,54 @@ def test_test_render_opens_and_produces_output(qtbot, tmp_path: Path, monkeypatc
     window._test_render()
 
     assert "hello web01" in captured["output"]
+
+
+BUGGY_HOOK_SCHEMA = """\
+name: Buggy Hook Widget
+id: buggy_hook_widget
+version: 1
+status: draft
+identity_field: name
+hook: buggy
+template: widget.j2
+fields:
+  - key: name
+    label: Name
+    type: string
+    required: true
+"""
+
+
+def test_test_render_with_a_buggy_hook_shows_traceback_not_silence(qtbot, tmp_path: Path, caplog):
+    # This dialog exists specifically to troubleshoot a schema+hook before
+    # it's used live — a hook bug (not a clean HookError) must show up
+    # here loudly, in the output panel and in app.log, not disappear.
+    schemas_dir = tmp_path / "schemas"
+    schemas_dir.mkdir()
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    (templates_dir / "widget.j2").write_text("hello {{ name }}", encoding="utf-8")
+    (hooks_dir / "buggy.py").write_text(
+        "def build(values, context, services):\n    return values['does_not_exist']\n",
+        encoding="utf-8",
+    )
+    schema_path = schemas_dir / "buggy_hook_widget.yaml"
+    schema_path.write_text(BUGGY_HOOK_SCHEMA, encoding="utf-8")
+
+    palette = theme.palette_for(False)
+    schema = load_schema(schema_path)
+    dialog = TestRenderDialog(schema, schema_path, "tester", palette)
+    qtbot.addWidget(dialog)
+    dialog.form.set_raw_values({"name": "x"})
+
+    with caplog.at_level("ERROR", logger="configgen.hooks"):
+        dialog._render()
+
+    assert "crashed" in dialog.status_label.text()
+    assert "Traceback" in dialog.output.toPlainText()
+    assert any("raised an unhandled exception" in r.message for r in caplog.records)
 
 
 # -- lifecycle ---------------------------------------------------------

@@ -7,15 +7,17 @@ rendering as an empty string — the template editor's "Check" (phase 12) and
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
-from jinja2.exceptions import TemplateError
 
 from configgen.appinfo import APP_NAME, __version__
 from configgen.core.schema import Schema
+
+logger = logging.getLogger(__name__)
 
 
 class RenderError(Exception):
@@ -62,10 +64,25 @@ def render_documents(
     timestamp = timestamp or datetime.now()
     rendered = {}
     for doc in schema.document_list():
+        logger.info("rendering schema=%s doc=%s template=%s", schema.id, doc.key, doc.template)
         try:
             template = env.get_template(doc.template)
             body = template.render(**context)
-        except TemplateError as exc:
+        except Exception as exc:
+            # Deliberately broad, not just jinja2.exceptions.TemplateError:
+            # a bad custom filter/global raising its own exception mid-render
+            # (a ValueError, a TypeError from unexpected input, ...) is NOT
+            # wrapped by Jinja2 — it propagates straight out of .render() as
+            # whatever raw type it is. Narrower handling here used to let
+            # exactly that kind of bug through as an uncaught exception,
+            # which a --windowed build has no console to show — the button
+            # just silently did nothing.
+            logger.exception(
+                "render failed: schema=%s doc=%s template=%s", schema.id, doc.key, doc.template
+            )
             raise RenderError(f"{doc.key}: {exc}") from exc
         rendered[doc.key] = header_comment(schema, username=username, timestamp=timestamp) + body
+        logger.info(
+            "rendered schema=%s doc=%s (%d chars)", schema.id, doc.key, len(rendered[doc.key])
+        )
     return rendered

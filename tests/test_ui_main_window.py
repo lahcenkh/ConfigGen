@@ -177,6 +177,52 @@ def test_generate_with_invalid_form_does_not_save(qtbot, tmp_path: Path, monkeyp
     assert view.form.widgets["hostname"]._error_label.text()
 
 
+BUGGY_HOOK_SCHEMA = """\
+name: Buggy Hook Widget
+id: buggy_hook_widget
+version: 1
+status: published
+identity_field: name
+hook: buggy
+template: widget.j2
+fields:
+  - key: name
+    label: Name
+    type: string
+    required: true
+"""
+
+
+def test_render_with_a_buggy_hook_is_caught_and_logged_not_silent(
+    qtbot, tmp_path: Path, monkeypatch, caplog
+):
+    # Regression test for the exact "click render, nothing happens, no
+    # error, nothing" report: a hook raising something other than
+    # HookError/DatabaseError used to propagate uncaught out of _render,
+    # which a --windowed build has no console to show — this must instead
+    # become a clean status message plus a logged traceback.
+    window, store, project = _isolated_window(tmp_path, monkeypatch)
+    _write(project / "schemas" / "buggy_hook_widget.yaml", BUGGY_HOOK_SCHEMA)
+    _write(
+        project / "hooks" / "buggy.py",
+        "def build(values, context, services):\n    return values['does_not_exist']\n",
+    )
+    window._refresh_dashboard()
+    qtbot.addWidget(window)
+    window._open_generator("buggy_hook_widget")
+    view = window.generator_view
+    view.form.set_raw_values({"name": "x"})
+
+    with caplog.at_level("ERROR", logger="configgen.hooks"):
+        result = window._render(view)
+
+    assert result is None
+    assert "crashed" in view.status_label.text()
+    assert not (tmp_path / "output").exists()
+    assert store.list_generation_log(window.user) == []
+    assert any("raised an unhandled exception" in r.message for r in caplog.records)
+
+
 # -- save as / diff ----------------------------------------------------------
 
 

@@ -9,6 +9,7 @@ never re-implements what "valid"/"rendered"/"saved" mean.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -66,6 +67,8 @@ from configgen.ui.sidebar import Sidebar
 from configgen.ui.template_editor import TemplateEditorWindow
 from configgen.ui.update_notice import UpdateBanner, UpdateCheckWorker
 from configgen.ui.user_admin import UserAdminWindow
+
+logger = logging.getLogger(__name__)
 
 
 class GeneratorView(QWidget):
@@ -478,12 +481,14 @@ class MainWindow(QMainWindow):
     def _render(self, view: GeneratorView) -> dict[str, str] | None:
         values = view.form.validate()
         if values is None:
+            logger.info("render: schema=%s failed form validation", view.schema.id)
             view.status_label.setText("Fix the highlighted fields before continuing.")
             return None
 
         schema, schema_path = view.schema, view.schema_path
         templates_dir, hooks_dir = project_dirs_for(schema_path)
         context = values
+        logger.info("render: schema=%s user=%s starting", schema.id, self.user.username)
 
         if schema.hook:
             try:
@@ -502,7 +507,16 @@ class MainWindow(QMainWindow):
                 view.status_label.setText("Hook rejected this submission.")
                 return None
             except DatabaseError as exc:
+                logger.error(
+                    "render: schema=%s hook '%s' database error: %s", schema.id, schema.hook, exc
+                )
                 view.status_label.setText(str(exc))
+                return None
+            except Exception as exc:  # noqa: BLE001 - a buggy hook must never fail silently
+                logger.exception("render: schema=%s hook '%s' crashed", schema.id, schema.hook)
+                view.status_label.setText(
+                    f"Hook '{schema.hook}' crashed: {exc}\nSee logs/app.log for the full traceback."
+                )
                 return None
 
         try:
@@ -515,6 +529,7 @@ class MainWindow(QMainWindow):
                 filters=filters,
             )
         except RenderError as exc:
+            logger.warning("render: schema=%s failed: %s", schema.id, exc)
             view.status_label.setText(f"Render failed: {exc}")
             return None
 
@@ -525,8 +540,11 @@ class MainWindow(QMainWindow):
                 warnings += [
                     f"{doc_key}: {w}" for w in run_preflight(schema.preflight, text, preflight_dir)
                 ]
+        if warnings:
+            logger.info("render: schema=%s preflight warnings=%d", schema.id, len(warnings))
         view.status_label.setText("\n".join(["Preflight warnings:", *warnings]) if warnings else "")
 
+        logger.info("render: schema=%s succeeded (%d document(s))", schema.id, len(rendered))
         view.show_rendered(rendered)
         return rendered
 
@@ -539,13 +557,18 @@ class MainWindow(QMainWindow):
             return
 
         raw_values = view.form.raw_values()
-        result = save_documents(
-            rendered,
-            view.schema,
-            raw_values=raw_values,
-            output_root=output_dir(),
-            username=self.user.username,
-        )
+        try:
+            result = save_documents(
+                rendered,
+                view.schema,
+                raw_values=raw_values,
+                output_root=output_dir(),
+                username=self.user.username,
+            )
+        except OSError as exc:
+            logger.exception("generate: schema=%s failed to save output", view.schema.id)
+            view.status_label.setText(f"Could not save output: {exc}")
+            return
         for path in result.document_paths.values():
             self.store.record_generation(
                 self.user,
@@ -555,6 +578,7 @@ class MainWindow(QMainWindow):
                 output_filename=path.name,
                 group_name=view.schema.group,
             )
+        logger.info("generate: schema=%s saved to %s", view.schema.id, result.output_dir)
         view.status_label.setText(f"Saved to {result.output_dir}")
 
     # -- save as / diff ----------------------------------------------------

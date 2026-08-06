@@ -33,6 +33,9 @@ resources/data/*
 # User-facing generated output
 output/
 
+# App logs (logging_setup.py)
+logs/
+
 # Auth store
 users.db
 

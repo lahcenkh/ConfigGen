@@ -12,6 +12,7 @@ already uses for a single row.
 from __future__ import annotations
 
 import csv
+import logging
 import shutil
 from pathlib import Path
 
@@ -44,6 +45,8 @@ from configgen.core.schema import (
 )
 from configgen.hooks import services_for_schema
 from configgen.paths import output_dir
+
+logger = logging.getLogger(__name__)
 
 
 class BulkDialog(QDialog):
@@ -192,6 +195,7 @@ class BulkDialog(QDialog):
         templates_dir, hooks_dir = project_dirs_for(schema_path)
         self.progress.setVisible(True)
         self.run_button.setEnabled(False)
+        logger.info("bulk: schema=%s rows=%d source=%s", schema.id, len(rows), self.input_path)
         try:
             self.result = run_bulk(
                 schema,
@@ -206,10 +210,24 @@ class BulkDialog(QDialog):
                 preflight_dir=project_preflight_dir_for(schema_path),
                 filters=load_project_filters(project_root_for(schema_path)),
             )
+        except Exception as exc:  # noqa: BLE001 - a batch must never fail silently
+            logger.exception("bulk: schema=%s crashed", schema.id)
+            QMessageBox.critical(
+                self,
+                "Bulk generation failed",
+                f"{exc}\n\nSee logs/app.log for the full traceback.",
+            )
+            return
         finally:
             self.progress.setVisible(False)
             self.run_button.setEnabled(True)
 
+        logger.info(
+            "bulk: schema=%s finished — %d valid, %d errors",
+            schema.id,
+            self.result.valid_count,
+            self.result.error_count,
+        )
         for row in self.result.generated:
             for filename in row["documents"].values():
                 self.store.record_generation(

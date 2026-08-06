@@ -11,7 +11,9 @@ the editing surface (raw text + syntax highlighting) around them.
 from __future__ import annotations
 
 import json
+import logging
 import re
+import traceback
 from pathlib import Path
 
 import yaml
@@ -65,6 +67,8 @@ from configgen.ui import theme
 from configgen.ui.form_builder import FormBuilder
 from configgen.ui.highlighters import ConfigHighlighter, JinjaHighlighter, YamlHighlighter
 from configgen.ui.widgets import StatusBadge
+
+logger = logging.getLogger(__name__)
 
 _STATUS_RE = re.compile(r"(?m)^status:\s*\w+")
 _NAME_RE = re.compile(r"(?m)^name:\s*.*$")
@@ -171,6 +175,7 @@ class TestRenderDialog(QDialog):
 
         templates_dir, hooks_dir = project_dirs_for(self.schema_path)
         context = values
+        logger.info("test render: schema=%s starting", self.schema.id)
         if self.schema.hook:
             try:
                 services = services_for_schema(self.schema_path)
@@ -181,7 +186,23 @@ class TestRenderDialog(QDialog):
                 self.status_label.setText(f"Hook rejected input: {exc.errors}")
                 return
             except DatabaseError as exc:
+                logger.error(
+                    "test render: schema=%s hook '%s' database error: %s",
+                    self.schema.id,
+                    self.schema.hook,
+                    exc,
+                )
                 self.status_label.setText(str(exc))
+                return
+            except Exception:  # noqa: BLE001 - this dialog exists to surface exactly this
+                logger.exception(
+                    "test render: schema=%s hook '%s' crashed", self.schema.id, self.schema.hook
+                )
+                self.status_label.setText(
+                    f"Hook '{self.schema.hook}' crashed — traceback below and in logs/app.log."
+                )
+                self._highlighters.clear()
+                self.output.setPlainText(traceback.format_exc())
                 return
 
         try:
@@ -194,6 +215,7 @@ class TestRenderDialog(QDialog):
                 filters=filters,
             )
         except RenderError as exc:
+            logger.warning("test render: schema=%s failed: %s", self.schema.id, exc)
             self.status_label.setText(f"Render failed: {exc}")
             return
 
@@ -202,6 +224,7 @@ class TestRenderDialog(QDialog):
         text = "\n\n".join(rendered.values())
         self.output.setPlainText(text)
         self._highlighters.append(ConfigHighlighter(self.output.document(), self.palette))
+        logger.info("test render: schema=%s succeeded", self.schema.id)
         self.status_label.setText("Rendered successfully.")
 
 

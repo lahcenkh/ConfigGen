@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -27,6 +28,8 @@ from configgen.core.renderer import RenderError, render_documents
 from configgen.core.schema import Schema
 from configgen.core.validators import FieldValidationError, validate_values
 from configgen.hooks import HookError, Services, run_hook
+
+logger = logging.getLogger(__name__)
 
 
 def read_csv_rows(path: str | Path) -> list[dict[str, str]]:
@@ -108,6 +111,14 @@ def run_bulk(
     timestamp = timestamp or datetime.now()
     batch_id = uuid.uuid4().hex
     batch_name = f"batch_{timestamp.strftime('%Y%m%d%H%M%S')}"
+    logger.info(
+        "bulk %s: schema=%s rows=%d source=%s username=%s",
+        batch_id,
+        schema.id,
+        len(rows),
+        source,
+        username,
+    )
 
     ready: list[tuple[int, dict, dict]] = []  # (row_number, raw_row, render_context)
     row_errors: list[RowError] = []
@@ -116,6 +127,7 @@ def run_bulk(
         try:
             values = validate_values(schema, raw_row, database=database)
         except FieldValidationError as exc:
+            logger.info("bulk %s: row %d failed validation: %s", batch_id, row_number, exc.errors)
             row_errors.append(RowError(row_number=row_number, errors=exc.errors))
             continue
 
@@ -123,6 +135,13 @@ def run_bulk(
             try:
                 context = run_hook(hooks_dir, schema.hook, values, {"username": username}, services)
             except HookError as exc:
+                logger.info(
+                    "bulk %s: row %d hook '%s' rejected: %s",
+                    batch_id,
+                    row_number,
+                    schema.hook,
+                    exc.errors,
+                )
                 row_errors.append(RowError(row_number=row_number, errors=exc.errors))
                 continue
         else:
@@ -142,6 +161,7 @@ def run_bulk(
                 filters=filters,
             )
         except RenderError as exc:
+            logger.info("bulk %s: row %d render failed: %s", batch_id, row_number, exc)
             row_errors.append(RowError(row_number=row_number, errors={"_render": str(exc)}))
             continue
 
@@ -188,6 +208,13 @@ def run_bulk(
     manifest_path = output_dir / "batch_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
 
+    logger.info(
+        "bulk %s: finished — %d valid, %d errors, output=%s",
+        batch_id,
+        len(generated),
+        len(row_errors),
+        output_dir,
+    )
     return BulkResult(
         batch_id=batch_id,
         output_dir=output_dir,

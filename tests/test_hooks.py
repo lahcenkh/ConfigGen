@@ -136,3 +136,44 @@ def test_run_hook_propagates_hook_error(tmp_path: Path):
             {},
             services,
         )
+
+
+def test_run_hook_logs_start_and_success(tmp_path: Path, caplog):
+    (tmp_path / "simple.py").write_text(
+        "def build(values, context, services):\n    return {'greeting': 'hi'}\n",
+        encoding="utf-8",
+    )
+    with caplog.at_level("INFO", logger="configgen.hooks"):
+        run_hook(tmp_path, "simple", {"name": "world"}, {}, Services())
+    messages = "\n".join(caplog.messages)
+    assert "hook 'simple': starting" in messages
+    assert "hook 'simple': succeeded" in messages
+
+
+def test_run_hook_logs_a_traceback_when_the_hook_itself_is_buggy(tmp_path: Path, caplog):
+    # Not a HookError — a real bug in the hook (a typo'd key, a bad
+    # assumption about input shape). This must propagate as the raw
+    # exception (existing behavior, §6: "the author sees their own
+    # tracebacks unobscured"), but it must also be logged in full so
+    # there's a trail to troubleshoot it from in a --windowed build.
+    (tmp_path / "broken.py").write_text(
+        "def build(values, context, services):\n    return values['does_not_exist']\n",
+        encoding="utf-8",
+    )
+    with caplog.at_level("INFO", logger="configgen.hooks"):
+        with pytest.raises(KeyError):
+            run_hook(tmp_path, "broken", {"name": "world"}, {}, Services())
+    assert any(
+        r.levelname == "ERROR" and "raised an unhandled exception" in r.message
+        for r in caplog.records
+    )
+
+
+def test_load_hook_logs_a_traceback_when_the_module_fails_to_import(tmp_path: Path, caplog):
+    (tmp_path / "bad_import.py").write_text(
+        "from configgen.this_module_does_not_exist import Nope\n", encoding="utf-8"
+    )
+    with caplog.at_level("INFO", logger="configgen.hooks"):
+        with pytest.raises(ModuleNotFoundError):
+            load_hook(tmp_path, "bad_import")
+    assert any(r.levelname == "ERROR" and "failed to load" in r.message for r in caplog.records)
