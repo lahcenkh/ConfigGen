@@ -25,6 +25,18 @@ def test_run_configgen_does_not_launch_on_import():
     assert "main" in module
 
 
+def test_run_configgen_cli_entry_point_is_importable_and_absolute():
+    source = (REPO_ROOT / "run_configgen_cli.py").read_text(encoding="utf-8")
+    compile(source, "run_configgen_cli.py", "exec")
+    assert "from configgen.cli import main" in source
+    assert "from .cli" not in source  # a relative import would fail once frozen (§19)
+
+
+def test_run_configgen_cli_does_not_launch_on_import():
+    module = runpy.run_path(str(REPO_ROOT / "run_configgen_cli.py"), run_name="not_main")
+    assert "main" in module
+
+
 def test_configgen_spec_is_syntactically_valid():
     source = (PACKAGING / "ConfigGen.spec").read_text(encoding="utf-8")
     compile(source, "ConfigGen.spec", "exec")
@@ -34,6 +46,17 @@ def test_configgen_spec_references_the_absolute_import_entry_point():
     source = (PACKAGING / "ConfigGen.spec").read_text(encoding="utf-8")
     assert "run_configgen.py" in source
     assert "icon.ico" in source
+
+
+def test_configgen_spec_builds_both_gui_and_cli_targets():
+    source = (PACKAGING / "ConfigGen.spec").read_text(encoding="utf-8")
+    assert "run_configgen_cli.py" in source
+    assert 'name="ConfigGen-CLI"' in source
+    assert "console=True" in source  # the CLI exe must attach to a terminal
+    assert "console=False" in source  # the GUI exe must not
+    # Each build target's own version resource, not one shared/misattributed.
+    assert "version_info.txt" in source
+    assert "version_info_cli.txt" in source
 
 
 def test_dockerfile_is_cli_only_and_installs_base_deps():

@@ -3,6 +3,33 @@
 The errors you'll actually hit, in the words ConfigGen actually uses, and
 what they mean.
 
+## `logs/app.log`
+
+The GUI writes everything it does — every render, every hook run, every
+error, with a full traceback — to `logs/app.log` next to the exe (or the
+repo root, running from source), rotating at 5MB × 5 backups. This
+exists specifically for the "I clicked Generate and nothing happened"
+case: the packaged GUI build is windowed (no console), so a bug that
+would otherwise print a traceback to a terminal has nowhere to go — an
+unhandled exception is now always (1) logged here in full, and (2) shown
+to you in a popup, instead of silently doing nothing.
+
+Reading it: each line is `timestamp LEVEL logger.name: message`. The two
+loggers you'll care about most:
+
+- `configgen.core.renderer` — every render attempt, and on failure the
+  Jinja2 traceback (a bad custom filter, a template runtime error) that
+  produced it.
+- `configgen.hooks` — every hook run (its input field keys), and on
+  failure the hook's own traceback — the fastest way to troubleshoot a
+  hook that's rejecting input or crashing outright. The Template Editor's
+  **Test Render** button exercises this same path against a schema
+  without leaving the editor, printing the same traceback into its output
+  panel.
+
+The CLI doesn't write to this file — it's a console app, so its own
+tracebacks/error messages already print directly to your terminal.
+
 ## "no database found" / "schema has fields sourced from a database, but no queries.yaml found"
 
 ```text

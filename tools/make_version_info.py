@@ -1,13 +1,14 @@
-"""Generates packaging/version_info.txt (a Windows EXE version resource)
-from configgen.appinfo — the same single source of truth the window title,
-CLI --version, and About dialog already read from, so the exe's own
+"""Generates packaging/version_info.txt and packaging/version_info_cli.txt
+(Windows EXE version resources, one per ConfigGen.spec build target) from
+configgen.appinfo — the same single source of truth the window title, CLI
+--version, and About dialog already read from, so each exe's own
 Properties > Details tab (File description, File version, Product name,
 Copyright, ...) is never out of sync with what the app reports about
 itself. Run once from the repo root: `python tools/make_version_info.py`.
 
 Not part of the app's runtime import graph — this only ever runs manually,
-ahead of a packaging build, to (re)produce packaging/version_info.txt,
-which ConfigGen.spec's EXE(version=...) then embeds into the built exe.
+ahead of a packaging build, to (re)produce these files, which
+ConfigGen.spec's two EXE(version=...) calls then embed into the built exes.
 
 The output file's odd syntax (a bare `VSVersionInfo(...)` expression, no
 imports) isn't an arbitrary style choice — PyInstaller loads it by
@@ -92,10 +93,22 @@ def render(
     )
 
 
+_CLI_DESCRIPTION = (
+    "ConfigGen — command-line interface for generating text configurations "
+    "from a schema and a Jinja template."
+)
+
+
 def main() -> int:
-    out_path = REPO_ROOT / "packaging" / "version_info.txt"
-    out_path.write_text(render(), encoding="utf-8")
-    print(f"wrote {out_path}")
+    gui_path = REPO_ROOT / "packaging" / "version_info.txt"
+    gui_path.write_text(render(), encoding="utf-8")
+    print(f"wrote {gui_path}")
+
+    cli_path = REPO_ROOT / "packaging" / "version_info_cli.txt"
+    cli_path.write_text(
+        render(app_name=f"{APP_NAME}-CLI", description=_CLI_DESCRIPTION), encoding="utf-8"
+    )
+    print(f"wrote {cli_path}")
     return 0
 
 

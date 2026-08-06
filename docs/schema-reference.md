@@ -26,7 +26,7 @@ reference is a sibling directory of `schemas/`, resolved automatically:
 
 | Key | Required | Meaning |
 |---|:---:|---|
-| `name` | yes | Display name (dashboard tile title, template editor header) |
+| `name` | yes | Display name (dashboard tile title, template editor header) — change it in place with the Template Editor's **Rename** button, or by hand |
 | `id` | yes | Stable identifier — filenames, generation log entries, and version history all key off this, not the schema's filename |
 | `fields` | yes | List of field definitions, see below |
 | `template` | one of these two | Single output document — the `.j2` file's name, relative to `templates/` |

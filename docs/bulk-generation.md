@@ -115,5 +115,15 @@ single Generate follows.
 
 The dashboard's **Bulk Generate** button (visible to every role) opens a
 file picker for the CSV/XLSX, a progress indicator while it runs, and an
-error summary table at the end with **Export Errors to CSV** — the same
-`--errors-out` output as the CLI, one click away.
+error summary table at the end. A few one-click extras beyond what the
+CLI does on its own:
+
+- **Download Input Template** — writes a blank CSV or XLSX with just the
+  header row (matching the selected schema's field keys) for filling in
+  offline and re-uploading, instead of guessing column names by hand.
+- **Export Errors to CSV** — the same `--errors-out` output as the CLI,
+  one click away.
+- **Copy Configs To…** — after a run, copies just the rendered `.txt`
+  configs (not the `.json` profiles or `batch_manifest.json`) to a second
+  folder of your choosing — for handing a batch off somewhere else
+  without touching the normal `output/` tree.

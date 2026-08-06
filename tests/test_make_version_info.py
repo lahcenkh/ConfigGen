@@ -44,3 +44,31 @@ def test_committed_version_info_file_is_loadable():
     info = load_version_info_from_text_file(str(version_info_path))
     fields = {s.name: s.val for s in info.kids[0].kids[0].kids}
     assert fields["ProductName"] == "ConfigGen"
+
+
+def test_committed_cli_version_info_file_is_loadable_and_distinct():
+    version_info_path = REPO_ROOT / "packaging" / "version_info_cli.txt"
+    assert version_info_path.is_file()
+    info = load_version_info_from_text_file(str(version_info_path))
+    fields = {s.name: s.val for s in info.kids[0].kids[0].kids}
+    assert fields["ProductName"] == "ConfigGen-CLI"
+    assert fields["OriginalFilename"] == "ConfigGen-CLI.exe"
+    assert "command-line" in fields["FileDescription"]
+
+
+def test_main_writes_both_gui_and_cli_version_info_files(tmp_path: Path, monkeypatch):
+    import tools.make_version_info as make_version_info
+
+    monkeypatch.setattr(make_version_info, "REPO_ROOT", tmp_path)
+    (tmp_path / "packaging").mkdir()
+
+    make_version_info.main()
+
+    gui_info = load_version_info_from_text_file(str(tmp_path / "packaging" / "version_info.txt"))
+    cli_info = load_version_info_from_text_file(
+        str(tmp_path / "packaging" / "version_info_cli.txt")
+    )
+    gui_fields = {s.name: s.val for s in gui_info.kids[0].kids[0].kids}
+    cli_fields = {s.name: s.val for s in cli_info.kids[0].kids[0].kids}
+    assert gui_fields["ProductName"] == "ConfigGen"
+    assert cli_fields["ProductName"] == "ConfigGen-CLI"

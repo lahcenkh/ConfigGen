@@ -43,6 +43,10 @@ pip install -e .
 configgen list --dir examples/schemas
 ```
 
+Every subcommand (`generate`, `bulk`, `history`, `user`/`group`/`apikey`
+management, ...) with real examples is in
+[docs/cli-reference.md](docs/cli-reference.md).
+
 The example configs under `examples/` are self-contained (own schemas,
 templates, sample database, sample CSV) — try one immediately:
 
@@ -79,10 +83,22 @@ installs PyInstaller into the venv if it's missing, regenerates
 what actually shipped), and copies starter `resources/schemas`,
 `resources/templates`, and `resources/data` next to the built exe (that
 content is written to at runtime by the Template Editor, so it can't live
-inside PyInstaller's own bundle — see `paths.py`). The result lands at
-`dist\ConfigGen\ConfigGen.exe`; keep the whole `dist\ConfigGen\` folder
-together when you move or zip it up — the exe depends on its sibling
-`_internal\` folder.
+inside PyInstaller's own bundle — see `paths.py`). It produces **two**
+independent exes:
+
+- `dist\ConfigGen\ConfigGen.exe` — the windowed GUI. Keep the whole
+  `dist\ConfigGen\` folder together when you move or zip it up — the exe
+  depends on its sibling `_internal\` folder.
+- `dist\ConfigGen-CLI\ConfigGen-CLI.exe` — the same CLI as `configgen`
+  when installed from source, packaged standalone (no GUI, no Qt, so it's
+  a fraction of the GUI build's size). Run it from a terminal exactly
+  like the source CLI: `.\ConfigGen-CLI.exe list --dir path\to\schemas`,
+  `.\ConfigGen-CLI.exe generate widget --values values.json`, etc. — see
+  `.\ConfigGen-CLI.exe --help`. It has no `resources\` of its own; point
+  `--dir` (and similar flags) at wherever your project's
+  schemas/templates/data actually live, e.g.
+  `..\ConfigGen\resources\schemas` if you want it operating on the same
+  project the GUI build is seeded with.
 
 Useful flags:
 
@@ -142,8 +158,12 @@ example (form-only → multi-document → database-backed), including the
 | [docs/schema-reference.md](docs/schema-reference.md) | Every field type, every schema option |
 | [docs/hooks.md](docs/hooks.md) | The `build()` hook contract, `services.db`/`services.net`, custom filters |
 | [docs/bulk-generation.md](docs/bulk-generation.md) | CSV/database-driven batch generation |
+| [docs/cli-reference.md](docs/cli-reference.md) | Every CLI subcommand, with real examples |
 | [docs/roles-and-groups.md](docs/roles-and-groups.md) | The three-role model, group scoping, template lifecycle |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | The errors you'll actually hit, and what they mean |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | The errors you'll actually hit, `logs/app.log`, and what they mean |
+
+The GUI has these same docs one click away too — the sidebar's **Help**
+button opens an in-app browser for all of them, no need to leave the app.
 
 ## Development
 

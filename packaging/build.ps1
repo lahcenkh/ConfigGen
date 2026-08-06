@@ -1,14 +1,22 @@
 <#
 .SYNOPSIS
-    Builds ConfigGen.exe with PyInstaller (§16).
+    Builds ConfigGen.exe and ConfigGen-CLI.exe with PyInstaller (§16).
 
 .DESCRIPTION
     Wraps `pyinstaller packaging/ConfigGen.spec` from the repo root, so
     you don't have to remember the spec's path or juggle a venv by hand.
     Installs PyInstaller into the given Python environment if it isn't
-    there already. Output lands at dist/ConfigGen/ConfigGen.exe (a
-    one-folder build, not --onefile - faster startup, easier to inspect
-    what actually shipped).
+    there already. The spec defines two independent one-folder builds
+    (faster startup than --onefile, easier to inspect what actually
+    shipped):
+
+        dist\ConfigGen\ConfigGen.exe          windowed GUI
+        dist\ConfigGen-CLI\ConfigGen-CLI.exe  console CLI
+
+    Point the CLI exe's --dir (and similar) flags at wherever your
+    project's schemas/templates/data actually live — e.g.
+    ..\ConfigGen\resources\schemas if you want it to operate on the same
+    project the GUI build below is seeded with.
 
     This only builds. It does not sign - run sign.ps1 afterward (or pass
     -Sign here to chain straight into it) - see that script's notes on
@@ -23,7 +31,10 @@
     build (PyInstaller otherwise reuses its cache incrementally).
 
 .PARAMETER Sign
-    Run sign.ps1 against the freshly built exe once the build finishes.
+    Run sign.ps1 against the freshly built GUI exe once the build finishes
+    (the CLI exe is a dev/ops tool typically run from a trusted machine or
+    CI, not double-clicked by an end user, so it isn't auto-signed here —
+    pass its path to sign.ps1 yourself if you want that too).
 
 .EXAMPLE
     ./packaging/build.ps1
@@ -76,17 +87,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Same reasoning as icon.ico above: always regenerate, not just when
-# missing, so the exe's Properties > Details tab (File description,
+# missing, so each exe's Properties > Details tab (File description,
 # version, copyright, ...) can never silently ship stale metadata from a
-# version bump that forgot to rerun this.
-Write-Host "Generating packaging\version_info.txt from configgen.appinfo ..."
+# version bump that forgot to rerun this. Writes both version_info.txt
+# (GUI) and version_info_cli.txt (CLI).
+Write-Host "Generating packaging\version_info*.txt from configgen.appinfo ..."
 & $Python tools\make_version_info.py
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to generate packaging\version_info.txt."
+    Write-Error "Failed to generate packaging\version_info*.txt."
     exit 1
 }
 
-Write-Host "Building ConfigGen.exe ..."
+Write-Host "Building ConfigGen.exe and ConfigGen-CLI.exe ..."
 & $Python -m PyInstaller packaging\ConfigGen.spec --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Error "PyInstaller build failed."
@@ -94,8 +106,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $exePath = "dist\ConfigGen\ConfigGen.exe"
+$cliExePath = "dist\ConfigGen-CLI\ConfigGen-CLI.exe"
 if (-not (Test-Path $exePath)) {
     Write-Error "Build finished but $exePath is missing - check the PyInstaller output above."
+    exit 1
+}
+if (-not (Test-Path $cliExePath)) {
+    Write-Error "Build finished but $cliExePath is missing - check the PyInstaller output above."
     exit 1
 }
 
@@ -117,7 +134,9 @@ foreach ($folder in @("schemas", "templates", "data")) {
 
 Write-Host ""
 Write-Host "Built: $exePath"
-Write-Host "Run it with:  .\$exePath"
+Write-Host "Run it with:      .\$exePath"
+Write-Host "Built: $cliExePath"
+Write-Host "Run it with:      .\$cliExePath --help"
 
 if ($Sign) {
     Write-Host ""
