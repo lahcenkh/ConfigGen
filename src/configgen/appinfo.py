@@ -2,7 +2,7 @@
 generated-config header comment, the CLI --version flag, and the About dialog."""
 
 APP_NAME = "ConfigGen"
-__version__ = "0.2.0"
+__version__ = "0.1.0"
 AUTHOR = "Lahcen Khouchane"
 CONTACT = "https://github.com/lahcenkh/ConfigGen"
 DESCRIPTION = (

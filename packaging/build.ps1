@@ -132,6 +132,28 @@ foreach ($folder in @("schemas", "templates", "data")) {
     Copy-Item -Recurse -Force "resources\$folder" $distResources
 }
 
+# examples/ is the richer, self-contained example set (hooks/, real
+# SQLite databases + queries.yaml, filters.py, the switch_trunk example)
+# that resources/ alone doesn't ship - layered on top so the packaged app
+# has fully working examples out of the box (a hook-backed schema like
+# device_provisioning needs hooks/device_provisioning.py to actually
+# render, not just its schema+template). examples/ wins on any filename
+# collision with resources/ (e.g. device_provisioning.yaml exists in
+# both) - same overwrite caveat as above: back up dist\ConfigGen\resources
+# first if you want to keep changes made through the running app.
+Write-Host "Copying examples/ content (data, hooks, schemas, templates, filters.py) on top ..."
+foreach ($folder in @("data", "hooks", "schemas", "templates")) {
+    $examplesFolder = "examples\$folder"
+    if (Test-Path $examplesFolder) {
+        Copy-Item -Recurse -Force $examplesFolder $distResources
+    }
+}
+Copy-Item -Force "examples\filters.py" $distResources
+
+# __pycache__ dirs (compiled hook bytecode) aren't meant to ship.
+Get-ChildItem -Path $distResources -Recurse -Directory -Filter "__pycache__" |
+    Remove-Item -Recurse -Force
+
 Write-Host ""
 Write-Host "Built: $exePath"
 Write-Host "Run it with:      .\$exePath"
